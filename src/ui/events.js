@@ -2,7 +2,7 @@
 // addPersonaButton 与 bindEvents 同文件：bindEvents 将其注册为 APP_READY/MOVABLE_PANELS_RESET 处理器，须同模块作用域。
 import { getContext } from "../../../../../extensions.js";
 import { store, loadData, saveData, saveHistory, loadState, saveState } from "../state.js";
-import { fetchChatHistoryFiltered, scanChatTags, getActivePersonaDescription } from "../st-data.js";
+import { getActivePersonaDescription } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
 import { forceSavePersona, syncToWorldInfoViaHelper, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
@@ -357,19 +357,18 @@ export function bindEvents() {
         store.isProcessing = true;
 
         const refineReq = $('#pw-refine-input').val();
-        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
-        if (!refineReq && !chatInferOn) {
+        if (!refineReq) {
             toastr.warning("请输入润色意见");
             store.isProcessing = false;
             return;
         }
         
-        store.lastRefineRequest = refineReq || (chatInferOn ? '[基于聊天记录更新]' : '');
+        store.lastRefineRequest = refineReq;
 
         if(!store.promptsCache.personaGen) loadData();
 
         const oldText = $('#pw-result-text').val();
-        const $btn = $(this).find('i').removeClass('fa-magic fa-rotate').addClass('fa-spinner fa-spin');
+        const $btn = $(this).find('i').removeClass('fa-magic').addClass('fa-spinner fa-spin');
         
         await forcePaint();
 
@@ -398,9 +397,9 @@ export function bindEvents() {
             $('#pw-refine-input').val(''); // 清空输入框
         } catch (e) { 
             console.error(e);
-            toastr.error((chatInferOn ? "更新" : "润色") + "失败: " + e.message); 
+            toastr.error("润色失败: " + e.message); 
         } finally { 
-            $btn.removeClass('fa-spinner fa-spin').addClass(chatInferOn ? 'fa-rotate' : 'fa-magic');
+            $btn.removeClass('fa-spinner fa-spin').addClass('fa-magic');
             store.isProcessing = false;
         }
     });
@@ -470,9 +469,7 @@ export function bindEvents() {
         if (store.isProcessing) return;
         store.isProcessing = true;
 
-        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
-        console.log(`[PW] Gen Clicked (chatInfer=${chatInferOn})`);
-        // 需求已改为可选（额外需求）：空需求＋聊天推断关闭＝纯全自动链，由 curator 按世界书自行策展
+        // 需求已改为可选（额外需求）：空需求＝纯全自动链，由 curator 按世界书自行策展
         const req = $('#pw-request').val();
         const $btn = $(this);
         $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 生成中...');
@@ -506,11 +503,7 @@ export function bindEvents() {
             console.error(e);
             toastr.error(e.message); 
         } finally { 
-            if (chatInferOn) {
-                $btn.prop('disabled', false).html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
-            } else {
-                $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
-            }
+            $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
             store.isProcessing = false;
         }
     });
@@ -776,202 +769,6 @@ export function bindEvents() {
     });
 
     $(document).on('click.pw', '#pw-wi-add', () => { const val = $('#pw-wi-select').val(); if (val && !window.pwExtraBooks.includes(val)) { window.pwExtraBooks.push(val); renderWiBooks(); } });
-
-    // === Chat History Reference Events ===
-    const refreshChatTokenEstimate = async () => {
-        if (!store.uiStateCache.chatHistory.enabled) { $('#pw-chat-token-badge').hide(); return; }
-        const result = await fetchChatHistoryFiltered();
-        const tokens = result.tokenEstimate;
-        const $badge = $('#pw-chat-token-badge');
-        if (tokens > 8000) {
-            $badge.text(`~${tokens} tokens`).css({background: 'rgba(255,80,80,0.2)', color: '#ff6b6b', border: '1px solid rgba(255,80,80,0.4)'}).attr('title', '警告: token 数量较大，可能影响生成质量或超出上下文限制').show();
-        } else if (tokens > 4000) {
-            $badge.text(`~${tokens} tokens`).css({background: 'rgba(240,173,78,0.15)', color: '#d68b1c', border: '1px solid rgba(240,173,78,0.3)'}).attr('title', '注意: token 数量较多').show();
-        } else {
-            $badge.text(`~${tokens} tokens`).css({background: 'rgba(92,184,92,0.1)', color: '#5cb85c', border: '1px solid rgba(92,184,92,0.3)'}).attr('title', '').show();
-        }
-        const msgs = result.messages;
-        if (msgs.length > 0) {
-            const first = msgs[0].floorId, last = msgs[msgs.length - 1].floorId;
-            $('#pw-chat-range-label').text(`(#${first} - #${last})`);
-        }
-    };
-
-    $(document).on('change.pw', '#pw-chat-infer-main-toggle', function () {
-        const enabled = $(this).prop('checked');
-        store.uiStateCache.chatHistory.enabled = enabled;
-        $('#pw-chat-infer-row').toggleClass('active', enabled);
-        if (enabled) {
-            if (!store.uiStateCache.chatHistory.preset) store.uiStateCache.chatHistory.preset = '10';
-            refreshChatTokenEstimate();
-            renderChatTags();
-        } else {
-            $('#pw-chat-token-badge').hide();
-            $('#pw-chat-range-label').text('');
-        }
-        updateChatInferSummary();
-        saveCurrentState();
-        updateChatInferBadge();
-    });
-
-    $(document).on('click.pw', '#pw-chat-infer-row .pw-chat-settings-zone', function (e) {
-        e.stopPropagation();
-        const enabled = $('#pw-chat-infer-main-toggle').prop('checked');
-        if (enabled) {
-            $('.pw-tab[data-tab="context"]').click();
-            setTimeout(() => {
-                const $section = $('#pw-chat-history-section');
-                if ($section.length) $section[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 200);
-        } else {
-            const $cb = $('#pw-chat-infer-main-toggle');
-            $cb.prop('checked', true).trigger('change');
-        }
-    });
-
-    $(document).on('click.pw', '#pw-chat-infer-row', function (e) {
-        if ($(e.target).closest('.pw-chat-settings-zone').length) return;
-        const $cb = $('#pw-chat-infer-main-toggle');
-        $cb.prop('checked', !$cb.prop('checked')).trigger('change');
-    });
-
-    function updateChatInferSummary() {
-        const conf = store.uiStateCache.chatHistory || {};
-        const enabled = conf.enabled;
-        const preset = conf.preset || '10';
-        let text = '未启用';
-        if (enabled) {
-            if (preset === 'custom' && conf.floorFrom && conf.floorTo) {
-                text = `#${conf.floorFrom}-#${conf.floorTo}`;
-            } else if (preset === 'all') {
-                text = '全部消息';
-            } else {
-                text = `最近${preset}条`;
-            }
-        }
-        $('#pw-chat-infer-summary').text(text);
-    }
-
-    $(document).on('change.pw', '#pw-chat-preset', function () {
-        const val = $(this).val();
-        store.uiStateCache.chatHistory.preset = val;
-        $('#pw-chat-custom-range').css('display', val === 'custom' ? 'flex' : 'none');
-        if (val !== 'custom') { store.uiStateCache.chatHistory.floorFrom = ''; store.uiStateCache.chatHistory.floorTo = ''; }
-        refreshChatTokenEstimate();
-        updateChatInferBadge();
-        updateChatInferSummary();
-        saveCurrentState();
-    });
-
-    $(document).on('change.pw', '#pw-chat-floor-from, #pw-chat-floor-to', function () {
-        store.uiStateCache.chatHistory.floorFrom = $('#pw-chat-floor-from').val();
-        store.uiStateCache.chatHistory.floorTo = $('#pw-chat-floor-to').val();
-        refreshChatTokenEstimate();
-        updateChatInferSummary();
-        saveCurrentState();
-    });
-
-    let chatFilterExpanded = false;
-    $(document).on('click.pw', '#pw-chat-filter-toggle', function () {
-        chatFilterExpanded = !chatFilterExpanded;
-        const $body = $('#pw-chat-filter-body');
-        if (chatFilterExpanded) { $body.slideDown(150); }
-        else { $body.slideUp(150); }
-        $(this).find('.pw-chat-filter-arrow').css('transform', chatFilterExpanded ? 'rotate(180deg)' : 'rotate(0)');
-    });
-
-    const renderChatTags = () => {
-        const $area = $('#pw-chat-active-tags').empty();
-        const conf = store.uiStateCache.chatHistory;
-        const allTags = [...(conf.excludeTags || []).map(t => ({name: t, mode: 'exclude'})), ...(conf.includeTags || []).map(t => ({name: t, mode: 'include'}))];
-        allTags.forEach(t => {
-            const cls = t.mode === 'include' ? 'pw-chat-tag-include' : 'pw-chat-tag-exclude';
-            const icon = t.mode === 'include' ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-solid fa-ban"></i>';
-            const $chip = $(`<div class="pw-chat-tag-chip ${cls}"><span class="pw-chat-tag-text">${icon} ${t.name}</span><span class="pw-chat-tag-del"><i class="fa-solid fa-times"></i></span></div>`);
-            $chip.find('.pw-chat-tag-text').on('click', function () {
-                if (t.mode === 'exclude') {
-                    conf.excludeTags = conf.excludeTags.filter(x => x !== t.name);
-                    if (!conf.includeTags.includes(t.name)) conf.includeTags.push(t.name);
-                } else {
-                    conf.includeTags = conf.includeTags.filter(x => x !== t.name);
-                    if (!conf.excludeTags.includes(t.name)) conf.excludeTags.push(t.name);
-                }
-                saveCurrentState(); renderChatTags(); refreshChatTokenEstimate();
-            });
-            $chip.find('.pw-chat-tag-del').on('click', function (e) {
-                e.stopPropagation();
-                conf.excludeTags = conf.excludeTags.filter(x => x !== t.name);
-                conf.includeTags = conf.includeTags.filter(x => x !== t.name);
-                saveCurrentState(); renderChatTags(); refreshChatTokenEstimate();
-            });
-            $area.append($chip);
-        });
-    };
-
-    $(document).on('keypress.pw', '#pw-chat-tag-input', function (e) {
-        if (e.which !== 13) return;
-        const val = $(this).val().trim();
-        if (!val) return;
-        const conf = store.uiStateCache.chatHistory;
-        if (!conf.excludeTags.includes(val) && !conf.includeTags.includes(val)) {
-            conf.excludeTags.push(val);
-            saveCurrentState(); renderChatTags(); refreshChatTokenEstimate();
-        }
-        $(this).val('');
-    });
-
-    $(document).on('click.pw', '#pw-chat-scan-tags', async function () {
-        const tags = await scanChatTags(30);
-        const $res = $('#pw-chat-scan-results').empty().css('display', 'flex');
-        if (tags.length === 0) { $res.append('<span style="font-size:0.8em; opacity:0.6;">未检测到闭合标签</span>'); return; }
-        tags.forEach(({tag, count}) => {
-            const conf = store.uiStateCache.chatHistory;
-            if (conf.excludeTags.includes(tag) || conf.includeTags.includes(tag)) return;
-            const $c = $(`<div class="pw-chat-tag-chip" style="cursor:pointer; opacity:0.7;">${tag} (${count})</div>`);
-            $c.on('click', function () {
-                conf.excludeTags.push(tag);
-                saveCurrentState(); renderChatTags(); refreshChatTokenEstimate();
-                $(this).fadeOut(200);
-            });
-            $res.append($c);
-        });
-    });
-
-    $(document).on('click.pw', '#pw-chat-preview-btn', async function () {
-        const $preview = $('#pw-chat-preview-area');
-        if ($preview.is(':visible')) { $preview.slideUp(150); $(this).html('<i class="fa-solid fa-eye"></i> 预览抓取内容'); return; }
-        $(this).html('<i class="fa-solid fa-spinner fa-spin"></i> 加载中...');
-        const result = await fetchChatHistoryFiltered();
-        if (result.messages.length === 0) {
-            $preview.text('未获取到聊天消息。请确认当前有活跃的聊天。').slideDown(150);
-        } else {
-            $preview.text(result.text).slideDown(150);
-        }
-        $(this).html('<i class="fa-solid fa-eye-slash"></i> 收起预览');
-        refreshChatTokenEstimate();
-    });
-
-    $(document).on('click.pw', '#pw-chat-refresh-btn', refreshChatTokenEstimate);
-
-    function updateChatInferBadge() {
-        const enabled = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
-        const $btn = $('#pw-btn-gen');
-        const $refineBtn = $('#pw-btn-refine');
-        const $refineInput = $('#pw-refine-input');
-        if (enabled) {
-            $btn.html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
-            $refineBtn.find('.pw-refine-btn-text').text('更新');
-            $refineBtn.find('i').removeClass('fa-magic').addClass('fa-rotate');
-            $refineBtn.attr('title', '基于聊天记录更新人设');
-            $refineInput.attr('placeholder', '输入更新方向，或留空直接基于聊天记录更新...');
-        } else {
-            $btn.html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
-            $refineBtn.find('.pw-refine-btn-text').text('润色');
-            $refineBtn.find('i').removeClass('fa-rotate').addClass('fa-magic');
-            $refineBtn.attr('title', '执行润色');
-            $refineInput.attr('placeholder', '输入意见，或选中上方文字后点击浮窗快速修改...');
-        }
-    }
 
     $(document).on('input.pw', '#pw-history-search', function() { store.historyPage = 1; renderHistoryList(); });
     $(document).on('click.pw', '#pw-history-search-clear', function () { $('#pw-history-search').val('').trigger('input'); });

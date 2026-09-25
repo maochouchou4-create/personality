@@ -86,45 +86,7 @@ Output the curated YAML schema now.`,
 [Constraint]: Do NOT include any "Little Theater", "Small Theater", scene descriptions, internal monologues, or CoT status bars. STRICTLY YAML DATA ONLY. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 6). Before finishing, silently re-check the output and fill in any field that is still blank. Values stay concise per rule 3; no value may restate World Setting content.
 
 [Action]:
-Output ONLY the YAML data matching the schema, with every field populated.`,
-    // User 聊天推断/更新 Prompt
-    chatInfer:
-`[Task: Infer or Update User Profile from Chat History]
-[Target Entity: "{{user}}"]
-
-<chat_history>
-{{chatHistory}}
-</chat_history>
-
-{{currentText}}
-
-<source_materials>
-{{charInfo}}
-</source_materials>
-
-<target_schema>
-{{template}}
-</target_schema>
-
-{{input}}
-
-[Requirements]:
-1. Carefully analyze the chat history. Focus on how "{{user}}" speaks, behaves, reacts, and expresses emotions.
-2. Extract personality traits, speech patterns, values, habits, relationships, and other characteristics revealed through dialogue.
-3. Priority of information sources:
-   (a) Direct evidence from the chat history and source materials.
-   (b) Reasonable, context-consistent inference derived from tone, worldview, relationships, and common sense.
-4. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field in the target schema with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from chat, generate the most reasonable value consistent with the observed personality, context, and worldview — but do NOT contradict existing evidence.
-5. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the user character has NOT YET reached or experienced in the chat history / source materials (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; an event scheduled for later in the story). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. Bare "未知" / "N/A" / "TBD" without a contextual reason is still forbidden.
-6. If an existing profile is provided above, PRESERVE content still consistent with the chat, ADD newly revealed traits, UPDATE evolved traits, and ENRICH with observed patterns. Any field that was previously blank MUST now be filled (subject to rules 4 and 5).
-7. If no existing profile is provided, create a complete new profile from scratch.
-8. Pay special attention to: tone of voice, emotional reactions, decision-making patterns, relationship dynamics, recurring themes.
-9. CONCISE VALUES — Each leaf value is one short phrase or sentence (≤20 Chinese characters) unless the block is explicitly narrative.
-
-[Constraint]: STRICTLY YAML DATA ONLY. No explanations, no scene descriptions. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 5). Before finishing, silently re-check the output and fill in any field that is still blank.
-
-[Action]:
-Output the COMPLETE YAML profile matching the schema, with every field populated.`
+Output ONLY the YAML data matching the schema, with every field populated.`
 };
 
 export const FALLBACK_SYSTEM_PROMPT =

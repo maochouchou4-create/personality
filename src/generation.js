@@ -1,8 +1,8 @@
 // 一次人设生成的完整域：上下文收集 → 提示词组装 → 调传输层 → 结果后处理。
-// 生成链：首次生成固定两段（curator 策展 schema → personaGen 按 schema 填充）；refine 与聊天推断各单段。
+// 生成链：首次生成固定两段（curator 策展 schema → personaGen 按 schema 填充）；refine 单段。
 // 提示词正文在 prompts.js，本文件只承载组装与调用链。
-import { store, loadData, saveData, getCurrentSchema } from "./state.js";
-import { getCharacterInfoText, fetchChatHistoryFiltered, getActivePersonaDescription } from "./st-data.js";
+import { store, loadData } from "./state.js";
+import { getCharacterInfoText } from "./st-data.js";
 import { getContextWorldBooks, loadWiSelection, getWorldBookEntries } from "./world-info.js";
 import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse } from "./api.js";
 import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
@@ -403,25 +403,11 @@ export async function runGeneration(data, apiConfig) {
     const currentText = data.currentText || "";
     const requestText = data.request || "";
     const isRefine = data.mode === 'refine';
-    
-    const chatHistConf = store.uiStateCache.chatHistory || {};
-    const chatInferEnabled = !!chatHistConf.enabled;
-
-    let rawUserPersona = "";
-    let rawChatHistory = "";
-    if (chatInferEnabled) {
-        const filteredResult = await fetchChatHistoryFiltered();
-        rawChatHistory = filteredResult.text;
-        rawUserPersona = getActivePersonaDescription();
-    }
 
     const wrappedCharInfo = wrapAsXiTaReference(rawCharInfo, `Entity Profile: ${charName}`);
-    const wrappedWi = wrapAsXiTaReference(rawWi, "Global State Variables"); 
+    const wrappedWi = wrapAsXiTaReference(rawWi, "Global State Variables");
     const wrappedGreetings = wrapAsXiTaReference(rawGreetings, "Init Sequence");
     const wrappedInput = wrapInputForSafety(requestText, currentText, isRefine);
-    
-    const wrappedUserPersona = chatInferEnabled ? wrapAsXiTaReference(rawUserPersona, `User Profile: ${currentName}`) : "";
-    const wrappedChatHistory = chatInferEnabled ? wrapAsXiTaReference(rawChatHistory, `Chat History Reference`) : "";
 
     // [Fix 10] Use selected preset logic
     let activeSystemPrompt = getRealSystemPrompt(store.uiStateCache.generationPreset);
@@ -471,38 +457,12 @@ export async function runGeneration(data, apiConfig) {
         return curated;
     };
 
-    if (chatInferEnabled) {
-        const existingBlock = (currentText && currentText.trim().length > 20)
-            ? wrapAsXiTaReference(currentText, `Existing Profile: ${currentName}`)
-            : '';
-        const basePrompt = store.promptsCache.chatInfer || DEFAULT_PROMPTS.chatInfer;
-
-        const schemaText = getCurrentSchema();
-        const userMessageContent = basePrompt
-            .replace(/{{user}}/g, currentName)
-            .replace(/{{char}}/g, charName)
-            .replace(/{{targetName}}/g, currentName)
-            .replace(/{{charInfo}}/g, wrappedCharInfo)
-            .replace(/{{greetings}}/g, wrappedGreetings)
-            .replace(/{{template}}/g, wrapAsXiTaReference(schemaText, "Schema Definition"))
-            .replace(/{{input}}/g, wrappedInput)
-            .replace(/{{currentText}}/g, existingBlock)
-            .replace(/{{userPersona}}/g, wrappedUserPersona)
-            .replace(/{{chatHistory}}/g, wrappedChatHistory);
-
-        const prefill = profilePrefillFor(schemaText);
-        const raw = await requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: prefill, label: 'chatInfer' });
-        return finalize(raw, prefill);
-    }
-
-    // 首次生成两段：先策展并持久化 schema（聊天推断与后续 refine 复用同一 schema，免重复策展）；
+    // 首次生成两段：先按世界书策展 schema（失败回退默认模板，fail-soft）再生成；
     // refine 单段：目标缓冲区自带完整结构，不注入 <target_schema>。
     let schemaForGen = "";
     if (!isRefine) {
         setGenProgress("策展模板中…");
         schemaForGen = await curateSchema();
-        store.userContext.curatedSchema = schemaForGen;
-        saveData();
         setGenProgress("生成中…");
     }
 
@@ -515,9 +475,7 @@ export async function runGeneration(data, apiConfig) {
         .replace(/{{charInfo}}/g, wrappedCharInfo)
         .replace(/{{greetings}}/g, wrappedGreetings)
         .replace(/{{template}}/g, wrappedTags)
-        .replace(/{{input}}/g, wrappedInput)
-        .replace(/{{userPersona}}/g, wrappedUserPersona)
-        .replace(/{{chatHistory}}/g, wrappedChatHistory);
+        .replace(/{{input}}/g, wrappedInput);
 
     if (isRefine) userMessageContent = stripTargetSchemaBlock(userMessageContent);
 

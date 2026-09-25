@@ -41,7 +41,6 @@ export async function openCreatorPopup() {
     if (!currentName) currentName = $('h5#your_name').text().trim();
     if (!currentName) currentName = context.powerUserSettings?.persona_selected || "User";
 
-    const chatHistEnabled = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
     const activeData = store.userContext;
     
     const charName = getContext().characters[getContext().characterId]?.name || "None";
@@ -94,17 +93,8 @@ export async function openCreatorPopup() {
                 <div class="pw-load-btn" id="pw-btn-load-current">载入已有人设</div>
             </div>
 
-            <div class="pw-context-row ${chatHistEnabled ? 'active' : ''}" id="pw-chat-infer-row">
-                <input type="checkbox" id="pw-chat-infer-main-toggle" ${chatHistEnabled ? 'checked' : ''} style="display:none;">
-                <span class="pw-context-row-label pw-chat-toggle-zone" style="cursor:pointer;">聊天记录注入</span>
-                <span class="pw-context-row-right pw-chat-settings-zone">
-                    <span id="pw-chat-infer-summary" class="pw-context-row-hint">${chatHistEnabled ? (store.uiStateCache.chatHistory.preset === 'all' ? '全部' : '最近' + (store.uiStateCache.chatHistory.preset || '10') + '条') : '未启用'}</span>
-                    <span id="pw-chat-token-badge" class="pw-chat-token-badge" style="display:none;"></span>
-                </span>
-            </div>
-
             <textarea id="pw-request" class="pw-textarea pw-auto-height" placeholder="额外需求（可选）——想要什么样的角色、要加什么字段…">${activeData.request}</textarea>
-            <button id="pw-btn-gen" class="pw-btn gen"><i class="fa-solid ${chatHistEnabled ? 'fa-comments' : 'fa-wand-magic-sparkles'}"></i> ${chatHistEnabled ? '聊天推断生成' : '生成 User 设定'}</button>
+            <button id="pw-btn-gen" class="pw-btn gen"><i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定</button>
 
             <div id="pw-result-area" style="display:${activeData.hasResult ? 'block' : 'none'}; margin-top:15px;">
                 <div class="pw-relative-container">
@@ -112,10 +102,10 @@ export async function openCreatorPopup() {
                 </div>
                 
                 <div class="pw-refine-toolbar">
-                    <textarea id="pw-refine-input" class="pw-refine-input" placeholder="${chatHistEnabled ? '输入更新方向，或留空直接基于聊天记录更新...' : '输入意见，或选中上方文字后点击浮窗快速修改...'}"></textarea>
-                    <div class="pw-refine-btn-vertical" id="pw-btn-refine" title="${chatHistEnabled ? '基于聊天记录更新人设' : '执行润色'}">
-                        <span class="pw-refine-btn-text">${chatHistEnabled ? '更新' : '润色'}</span>
-                        <i class="fa-solid ${chatHistEnabled ? 'fa-rotate' : 'fa-magic'}"></i>
+                    <textarea id="pw-refine-input" class="pw-refine-input" placeholder="输入意见，或选中上方文字后点击浮窗快速修改..."></textarea>
+                    <div class="pw-refine-btn-vertical" id="pw-btn-refine" title="执行润色">
+                        <span class="pw-refine-btn-text">润色</span>
+                        <i class="fa-solid fa-magic"></i>
                     </div>
                 </div>
             </div>
@@ -212,53 +202,6 @@ export async function openCreatorPopup() {
                         <button id="pw-wi-add" class="pw-btn primary pw-wi-add-btn"><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <div id="pw-wi-container"></div>
-                </div>
-            </div>
-
-            <div class="pw-card-section" id="pw-chat-history-section">
-                <div class="pw-row" style="margin-bottom:5px;">
-                    <label class="pw-section-label">聊天记录设置</label>
-                    <span style="font-size:0.72em; opacity:0.5;">在主页面点击启用</span>
-                </div>
-                <div id="pw-chat-history-body" style="display:flex; padding-top:5px; flex-direction:column; gap:8px;">
-                    <div class="pw-row" style="gap:6px; flex-wrap:nowrap; justify-content:flex-start;">
-                        <label style="font-size:0.85em; white-space:nowrap; opacity:0.8;">消息范围</label>
-                        <select id="pw-chat-preset" class="pw-input" style="flex:0 0 auto; width:auto; padding:4px 6px; font-size:0.85em;">
-                            <option value="10">最近 10 条</option>
-                            <option value="20" selected>最近 20 条</option>
-                            <option value="50">最近 50 条</option>
-                            <option value="all">全部</option>
-                            <option value="custom">自定义层数</option>
-                        </select>
-                        <div id="pw-chat-custom-range" style="display:none; flex:0 0 auto; align-items:center; gap:4px;">
-                            <input type="number" id="pw-chat-floor-from" class="pw-input" placeholder="从" style="width:55px; padding:4px; text-align:center; font-size:0.85em;">
-                            <span style="opacity:0.6;">-</span>
-                            <input type="number" id="pw-chat-floor-to" class="pw-input" placeholder="到" style="width:55px; padding:4px; text-align:center; font-size:0.85em;">
-                        </div>
-                        <span id="pw-chat-range-label" style="font-size:0.75em; opacity:0.6; white-space:nowrap;"></span>
-                    </div>
-
-                    <div class="pw-chat-filter-section">
-                        <div class="pw-chat-filter-header" id="pw-chat-filter-toggle">
-                            <span style="font-size:0.85em; opacity:0.8;"><i class="fa-solid fa-tags"></i> 标签过滤 (char回复)</span>
-                            <i class="fa-solid fa-chevron-down pw-chat-filter-arrow" style="transition:0.2s; font-size:0.75em; opacity:0.5;"></i>
-                        </div>
-                        <div id="pw-chat-filter-body" style="display:none;">
-                            <div style="display:flex; gap:4px; align-items:center;">
-                                <input type="text" id="pw-chat-tag-input" class="pw-input" placeholder="输入标签名回车" style="flex:1; padding:4px 6px; font-size:0.85em;">
-                                <button class="pw-btn primary" id="pw-chat-scan-tags" style="padding:4px 8px; font-size:0.8em;"><i class="fa-solid fa-wand-magic-sparkles"></i> 扫描</button>
-                            </div>
-                            <div id="pw-chat-scan-results" style="display:none; flex-wrap:wrap; gap:4px; padding:4px; background:rgba(0,0,0,0.03); border-radius:4px;"></div>
-                            <div style="font-size:0.7em; opacity:0.6; color:#d68b1c;">点击标签切换: 保留/排除。User发言始终全部保留。</div>
-                            <div id="pw-chat-active-tags" style="display:flex; flex-wrap:wrap; gap:4px;"></div>
-                        </div>
-                    </div>
-
-                    <div style="display:flex; gap:6px;">
-                        <button class="pw-btn primary" id="pw-chat-preview-btn" style="flex:1; padding:5px; font-size:0.85em;"><i class="fa-solid fa-eye"></i> 预览抓取内容</button>
-                        <button class="pw-btn" id="pw-chat-refresh-btn" style="padding:5px 8px; font-size:0.85em;" title="刷新token估算"><i class="fa-solid fa-rotate-right"></i></button>
-                    </div>
-                    <div id="pw-chat-preview-area" style="display:none; max-height:400px; overflow-y:auto; padding:8px; background:var(--pw-paper-bg); border:1px solid var(--pw-border); border-radius:6px; font-size:0.8em; white-space:pre-wrap; line-height:1.5; text-align:left; color:var(--pw-text-main);"></div>
                 </div>
             </div>
         </div>
@@ -368,15 +311,5 @@ export async function openCreatorPopup() {
 
     if (activeData.hasResult) {
         $('#pw-request').addClass('minimized');
-    }
-
-    // Restore chat history UI state
-    const chatConf = store.uiStateCache.chatHistory || {};
-    if (chatConf.preset) $('#pw-chat-preset').val(chatConf.preset);
-    if (chatConf.preset === 'custom') $('#pw-chat-custom-range').css('display', 'flex');
-    if (chatConf.floorFrom) $('#pw-chat-floor-from').val(chatConf.floorFrom);
-    if (chatConf.floorTo) $('#pw-chat-floor-to').val(chatConf.floorTo);
-    if (chatConf.enabled) {
-        $('#pw-chat-infer-main-toggle').prop('checked', true).trigger('change');
     }
 }
