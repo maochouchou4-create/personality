@@ -5,19 +5,12 @@ import { store, loadData, loadState, saveState } from "../state.js";
 import { defaultSettings } from "../api.js";
 import { getPresetHintText } from "../generation.js";
 import { loadAvailableWorldBooks } from "../world-info.js";
-import { fetchAvatarAsBase64 } from "../st-data.js";
 import { TEXT } from "../strings.js";
-import { autoBindGreetings, renderApiProfiles, renderAvatarStrip, renderGreetingsList, renderTemplateChips, renderWiBooks } from "./render.js";
+import { autoBindGreetings, renderApiProfiles, renderGreetingsList, renderWiBooks } from "./render.js";
 
 export async function openCreatorPopup() {
     const context = getContext();
     loadData();
-
-    // Pre-load current user avatar in background
-    fetchAvatarAsBase64().then(b64 => {
-        store.currentUserAvatarBase64 = b64;
-        if ($('#pw-avatar-strip').length) renderAvatarStrip();
-    });
 
     const savedState = loadState();
     let localConfig = savedState.localConfig || {};
@@ -54,9 +47,6 @@ export async function openCreatorPopup() {
     const charName = getContext().characters[getContext().characterId]?.name || "None";
     
     const headerTitle = `${TEXT.PANEL_TITLE}<span class="pw-header-subtitle">User:${currentName} & Char:${charName}</span>`;
-
-    const chipsDisplay = store.uiStateCache.templateExpanded ? 'flex' : 'none';
-    const chipsIcon = store.uiStateCache.templateExpanded ? 'fa-angle-up' : 'fa-angle-down';
 
     // [Fix 10] Generate Preset Options
     let presetOptionsHtml = `
@@ -104,41 +94,6 @@ export async function openCreatorPopup() {
                 <div class="pw-load-btn" id="pw-btn-load-current">载入已有人设</div>
             </div>
 
-            <div>
-                <div class="pw-tags-header">
-                    <span class="pw-tags-label" id="pw-template-block-header" style="cursor:pointer; user-select:none;">
-                        模版块 (点击填入) 
-                        <i class="fa-solid ${chipsIcon}" style="margin-left:5px;" title="折叠/展开"></i>
-                    </span>
-                    <div class="pw-tags-actions">
-                        <span class="pw-tags-edit-toggle" id="pw-toggle-edit-template">编辑模版</span>
-                    </div>
-                </div>
-                <div class="pw-tags-container" id="pw-template-chips" style="display:${chipsDisplay};"></div>
-                
-                <div class="pw-template-editor-area" id="pw-template-editor">
-                    <div class="pw-template-toolbar">
-                        <div class="pw-shortcut-bar">
-                            <div class="pw-shortcut-btn" data-key="  "><span>缩进</span><span class="code">Tab</span></div>
-                            <div class="pw-shortcut-btn" data-key=": "><span>冒号</span><span class="code">:</span></div>
-                            <div class="pw-shortcut-btn" data-key="- "><span>列表</span><span class="code">-</span></div>
-                            <div class="pw-shortcut-btn" data-key="\n"><span>换行</span><span class="code">Enter</span></div>
-                        </div>
-                        <div class="pw-mini-btn" id="pw-reset-template-small" title="恢复为默认模版" style="margin-left:auto; padding:2px 8px; font-size:0.8em; border:none; background:transparent; opacity:0.6;"><i class="fa-solid fa-rotate-left"></i></div>
-                    </div>
-                    <textarea id="pw-template-text" class="pw-template-textarea">${activeData.template}</textarea>
-                    <div class="pw-template-footer">
-                        <button class="pw-mini-btn" id="pw-save-template">保存模版</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="pw-context-row ${(store.uiStateCache.avatarRef.selectedIds || []).length > 0 ? 'active' : ''}" id="pw-avatar-ref-row">
-                <span class="pw-context-row-label">形象参考<span id="pw-avatar-count-badge" class="pw-context-badge ${(store.uiStateCache.avatarRef.selectedIds || []).length > 0 ? 'visible' : ''}">${(store.uiStateCache.avatarRef.selectedIds || []).length || ''}</span></span>
-                <div id="pw-avatar-strip" class="pw-avatar-strip"></div>
-                <span id="pw-avatar-add-btn" class="pw-avatar-add-btn" title="管理头像"><i class="fa-solid fa-plus"></i></span>
-            </div>
-
             <div class="pw-context-row ${chatHistEnabled ? 'active' : ''}" id="pw-chat-infer-row">
                 <input type="checkbox" id="pw-chat-infer-main-toggle" ${chatHistEnabled ? 'checked' : ''} style="display:none;">
                 <span class="pw-context-row-label pw-chat-toggle-zone" style="cursor:pointer;">聊天记录注入</span>
@@ -163,7 +118,6 @@ export async function openCreatorPopup() {
                         <i class="fa-solid ${chatHistEnabled ? 'fa-rotate' : 'fa-magic'}"></i>
                     </div>
                 </div>
-                <button class="pw-btn gen" id="pw-btn-apply-template" style="display:none; margin-top:8px; width:100%;"><i class="fa-solid fa-file-import"></i> 应用到模版</button>
             </div>
         </div>
 
@@ -258,19 +212,6 @@ export async function openCreatorPopup() {
                         <button id="pw-wi-add" class="pw-btn primary pw-wi-add-btn"><i class="fa-solid fa-plus"></i></button>
                     </div>
                     <div id="pw-wi-container"></div>
-                </div>
-            </div>
-
-            <div class="pw-card-section" id="pw-avatar-mgmt-section">
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <label class="pw-section-label pw-avatar-mgmt-toggle" style="flex:1; min-width:0; text-align:left; cursor:pointer;">形象参考 <i class="fa-solid fa-chevron-down" style="font-size:0.7em; opacity:0.5; margin-left:2px;"></i></label>
-                    <label class="pw-mini-btn" style="cursor:pointer; display:inline-flex; align-items:center; gap:3px; padding:2px 8px; font-size:0.75em; white-space:nowrap; flex-shrink:0;">
-                        <i class="fa-solid fa-upload"></i> 上传
-                        <input type="file" id="pw-avatar-upload" accept="image/*" multiple style="display:none;">
-                    </label>
-                </div>
-                <div id="pw-avatar-mgmt-body" class="pw-avatar-mgmt-body" style="display:none;">
-                    <div id="pw-avatar-mgmt-grid" class="pw-avatar-mgmt-grid"></div>
                 </div>
             </div>
 
@@ -411,7 +352,6 @@ export async function openCreatorPopup() {
 
     callPopup(html, 'text', '', { wide: true, large: true, okButton: "Close" });
 
-    renderTemplateChips();
     loadAvailableWorldBooks().then(() => {
         renderWiBooks();
         const options = store.availableWorldBooks.length > 0 ? store.availableWorldBooks.map(b => `<option value="${b}">${b}</option>`).join('') : `<option disabled>未找到世界书</option>`;

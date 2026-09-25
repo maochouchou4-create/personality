@@ -1,42 +1,18 @@
 // 全部事件绑定的注册（接线层）。按视图内拆是后置清单——闭包共享状态需先重构，本批只整体搬移。
 // addPersonaButton 与 bindEvents 同文件：bindEvents 将其注册为 APP_READY/MOVABLE_PANELS_RESET 处理器，须同模块作用域。
 import { getContext } from "../../../../../extensions.js";
-import { store, getCurrentTemplate, loadData, saveData, saveHistory, saveAvatarImages, loadState, saveState } from "../state.js";
-import { DEFAULT_TEMPLATES } from "../prompts.js";
-import { getCharacterInfoText, fetchChatHistoryFiltered, scanChatTags, getActivePersonaDescription } from "../st-data.js";
+import { store, loadData, saveData, saveHistory, loadState, saveState } from "../state.js";
+import { fetchChatHistoryFiltered, scanChatTags, getActivePersonaDescription } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
 import { forceSavePersona, syncToWorldInfoViaHelper, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
 import { TEXT } from "../strings.js";
-import { renderApiProfiles, renderAvatarMgmt, renderAvatarStrip, renderHistoryList, renderTemplateChips, renderWiBooks } from "./render.js";
+import { renderApiProfiles, renderHistoryList, renderWiBooks } from "./render.js";
 import { openCreatorPopup } from "./panel.js";
 
 const BUTTON_ID = 'pw_persona_tool_btn';
 
 const forcePaint = () => new Promise(resolve => setTimeout(resolve, 50));
-
-function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
-
-function compressImage(base64, maxSize = 512, quality = 0.7) {
-    return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            let w = img.width, h = img.height;
-            if (w > maxSize || h > maxSize) {
-                const ratio = Math.min(maxSize / w, maxSize / h);
-                w = Math.round(w * ratio);
-                h = Math.round(h * ratio);
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            resolve(canvas.toDataURL('image/jpeg', quality));
-        };
-        img.onerror = () => resolve(base64);
-        img.src = base64;
-    });
-}
 
 export function bindEvents() {
     if (window.stPersonaWeaverBound) return;
@@ -202,188 +178,6 @@ export function bindEvents() {
         }
     });
 
-    $(document).on('click.pw', '#pw-toggle-edit-template', () => {
-        store.isEditingTemplate = !store.isEditingTemplate;
-        const tmpl = getCurrentTemplate();
-        
-        if (store.isEditingTemplate) {
-            $('#pw-template-text').val(tmpl);
-            $('#pw-template-chips').hide();
-            $('#pw-template-editor').css('display', 'flex');
-            $('#pw-toggle-edit-template').text("取消编辑").addClass('editing');
-            $('#pw-template-block-header').find('i').hide();
-            $('#pw-request').attr('placeholder', '输入模版需求，如：添加修仙相关属性、简化外貌字段...');
-            $('#pw-btn-gen').html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成模版');
-            $('#pw-btn-apply-template').show();
-            $('#pw-avatar-ref-row, #pw-chat-infer-row').slideUp(200);
-        } else {
-            $('#pw-template-editor').hide();
-            $('#pw-template-chips').css('display', 'flex');
-            $('#pw-toggle-edit-template').text("编辑模版").removeClass('editing');
-            $('#pw-template-block-header').find('i').show();
-            $('#pw-request').attr('placeholder', '在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...');
-            $('#pw-btn-gen').html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
-            $('#pw-btn-apply-template').hide();
-            $('#pw-avatar-ref-row, #pw-chat-infer-row').slideDown(200);
-        }
-    });
-
-    $(document).on('click.pw', '#pw-template-block-header', function() {
-        if (store.isEditingTemplate) return; 
-        const $chips = $('#pw-template-chips');
-        const $icon = $(this).find('i');
-        if ($chips.is(':visible')) {
-            $chips.slideUp();
-            $icon.removeClass('fa-angle-up').addClass('fa-angle-down');
-            store.uiStateCache.templateExpanded = false;
-        } else {
-            $chips.slideDown().css('display', 'flex');
-            $icon.removeClass('fa-angle-down').addClass('fa-angle-up');
-            store.uiStateCache.templateExpanded = true;
-        }
-        saveData(); 
-    });
-
-    // Reset Template Small Button
-    $(document).on('click.pw', '#pw-reset-template-small', function() {
-        if(confirm("确定要恢复为默认的 User 模版吗？")) {
-            const fallbackT = DEFAULT_TEMPLATES.user;
-            $('#pw-template-text').val(fallbackT);
-            store.userContext.template = fallbackT;
-            saveData();
-            if(!store.isEditingTemplate) renderTemplateChips();
-            toastr.success("已恢复默认 User 模版");
-        }
-    });
-
-    // (旧的 #pw-gen-template-smart 已移除，模板生成统一走 #pw-btn-gen)
-    $(document).on('click.pw', '#pw-gen-template-smart-DISABLED', async function() {
-        if (store.isProcessing) return;
-        store.isProcessing = true;
-        const $btn = $(this);
-        const originalText = $btn.html();
-        $btn.html('<i class="fas fa-spinner fa-spin"></i> 生成中...');
-        
-        try {
-            const contextData = await collectContextData();
-            const charInfoText = getCharacterInfoText(); 
-            const hasCharInfo = charInfoText && charInfoText.length > 50; 
-            const hasWi = contextData.wi && contextData.wi.length > 10;
-
-            if (!hasCharInfo && !hasWi) {
-                const wantGeneric = confirm("当前未检测到关联的角色卡或世界书信息。\n\n是否要生成通用模版？");
-                
-                if (!wantGeneric) {
-                    store.isProcessing = false;
-                    $btn.html(originalText);
-                    return;
-                }
-
-                const useDefault = confirm("请选择模版来源：\n\n点击【确定】使用内置默认模版（推荐）\n点击【取消】生成全新的通用模版");
-
-                if (useDefault) {
-                    const fallbackT = DEFAULT_TEMPLATES.user;
-                    
-                    $('#pw-template-text').val(fallbackT);
-                    store.userContext.template = fallbackT;
-                    saveData();
-                    renderTemplateChips();
-                    toastr.success("已恢复默认 User 模板");
-                    
-                    store.isProcessing = false;
-                    $btn.html(originalText);
-                    return; 
-                }
-            }
-
-            const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const config = {
-                wiText: contextData.wi,
-                apiSource: $('#pw-api-source').val(), 
-                indepApiUrl: $('#pw-api-url').val(),
-                indepApiKey: $('#pw-api-key').val(), 
-                indepApiModel: modelVal
-            };
-            
-            const generatedTemplate = await runGeneration(config, config, true);
-            
-            if (generatedTemplate) {
-                $('#pw-template-text').val(generatedTemplate);
-                
-                store.userContext.template = generatedTemplate;
-                saveData();
-
-                renderTemplateChips();
-                
-                if (!store.isEditingTemplate) {
-                    $('#pw-toggle-edit-template').click();
-                }
-                toastr.success("模版生成成功！请点击“保存模版”确认修改。");
-            }
-        } catch (e) {
-            console.error(e);
-            toastr.error("模版生成失败: " + e.message);
-        } finally {
-            $btn.html(originalText);
-            store.isProcessing = false;
-        }
-    });
-
-    $(document).on('click.pw', '#pw-save-template', () => {
-        const val = $('#pw-template-text').val();
-        
-        store.userContext.template = val;
-        saveData();
-        
-        saveHistory({ 
-            request: "模版手动保存", 
-            timestamp: new Date().toLocaleString(), 
-            title: "", 
-            data: { 
-                resultText: val, 
-                type: 'template'
-            } 
-        });
-
-        renderTemplateChips();
-        store.isEditingTemplate = false;
-        $('#pw-template-editor').hide();
-        $('#pw-template-chips').css('display', 'flex');
-        $('#pw-toggle-edit-template').text("编辑模版").removeClass('editing');
-        $('#pw-template-block-header').find('i').show();
-        $('#pw-btn-apply-template').hide();
-        $('#pw-request').attr('placeholder', '在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...');
-        $('#pw-btn-gen').html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
-        toastr.success("模版已更新并保存至记录");
-    });
-
-    // Apply result to template
-    $(document).on('click.pw', '#pw-btn-apply-template', function() {
-        const resultText = $('#pw-result-text').val();
-        if (!resultText) {
-            toastr.warning("结果区域为空，无内容可应用");
-            return;
-        }
-        $('#pw-template-text').val(resultText);
-        store.userContext.template = resultText;
-        saveData();
-        renderTemplateChips();
-        toastr.success("已将结果应用到模版编辑器，请确认后点击「保存模版」");
-    });
-
-    $(document).on('click.pw', '.pw-shortcut-btn', function () {
-        const key = $(this).data('key');
-        const $text = $('#pw-template-text');
-        const el = $text[0];
-        const start = el.selectionStart;
-        const end = el.selectionEnd;
-        const val = el.value;
-        const insertText = key === '\n' ? '\n' : key;
-        el.value = val.substring(0, start) + insertText + val.substring(end);
-        el.selectionStart = el.selectionEnd = start + insertText.length;
-        el.focus();
-    });
-
     let selectionTimeout;
     const checkSelection = () => {
         clearTimeout(selectionTimeout);
@@ -497,22 +291,12 @@ export function bindEvents() {
         if ($('#pw-result-area').is(':visible')) {
             $(this).removeClass('minimized');
             $('#pw-result-text').addClass('minimized');
-            $('#pw-template-text').removeClass('expanded').addClass('minimized');
         }
     });
     $(document).on('focus.pw', '#pw-result-text', function() {
         if ($('#pw-result-area').is(':visible')) {
             $(this).removeClass('minimized');
             $('#pw-request').addClass('minimized');
-            $('#pw-template-text').removeClass('expanded').addClass('minimized');
-        }
-    });
-
-    $(document).on('focus.pw', '#pw-template-text', function() {
-        $(this).removeClass('minimized').addClass('expanded');
-        $('#pw-request').addClass('minimized');
-        if ($('#pw-result-area').is(':visible')) {
-            $('#pw-result-text').addClass('minimized');
         }
     });
 
@@ -573,7 +357,7 @@ export function bindEvents() {
         store.isProcessing = true;
 
         const refineReq = $('#pw-refine-input').val();
-        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled && !store.isEditingTemplate;
+        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
         if (!refineReq && !chatInferOn) {
             toastr.warning("请输入润色意见");
             store.isProcessing = false;
@@ -592,19 +376,18 @@ export function bindEvents() {
         try {
             const contextData = await collectContextData();
             const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const isTemplateRefine = store.isEditingTemplate;
             const config = {
                 mode: 'refine', 
                 request: refineReq, 
                 currentText: oldText, 
                 wiText: contextData.wi,           
-                greetingsText: isTemplateRefine ? '' : contextData.greetings,
+                greetingsText: contextData.greetings,
                 apiSource: $('#pw-api-source').val(), 
                 indepApiUrl: $('#pw-api-url').val(),
                 indepApiKey: $('#pw-api-key').val(), 
                 indepApiModel: modelVal
             };
-            const responseText = await runGeneration(config, config, isTemplateRefine);
+            const responseText = await runGeneration(config, config);
 
             // 复用提取出来的渲染函数
             renderDiffComparison(oldText, responseText);
@@ -642,20 +425,19 @@ export function bindEvents() {
         try {
             const contextData = await collectContextData();
             const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const isTemplateRefine = store.isEditingTemplate;
             const config = {
                 mode: 'refine', 
                 request: store.lastRefineRequest,
                 currentText: oldText, 
                 wiText: contextData.wi,           
-                greetingsText: isTemplateRefine ? '' : contextData.greetings,
+                greetingsText: contextData.greetings,
                 apiSource: $('#pw-api-source').val(), 
                 indepApiUrl: $('#pw-api-url').val(),
                 indepApiKey: $('#pw-api-key').val(), 
                 indepApiModel: modelVal
             };
             
-            const responseText = await runGeneration(config, config, isTemplateRefine);
+            const responseText = await runGeneration(config, config);
 
             // 复用渲染函数，原地刷新 Diff 界面
             renderDiffComparison(oldText, responseText);
@@ -681,18 +463,17 @@ export function bindEvents() {
 
     $(document).on('click.pw', '#pw-diff-cancel', () => $('#pw-diff-overlay').fadeOut());
 
-    // Generate Persona / Template
+    // Generate Persona
     $(document).on('click.pw', '#pw-btn-gen', async function (e) {
         e.preventDefault();
         
         if (store.isProcessing) return;
         store.isProcessing = true;
 
-        const isTemplateGen = store.isEditingTemplate;
-        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled && !isTemplateGen;
-        console.log(`[PW] Gen Clicked (template=${isTemplateGen}, chatInfer=${chatInferOn})`);
+        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
+        console.log(`[PW] Gen Clicked (chatInfer=${chatInferOn})`);
         const req = $('#pw-request').val();
-        if (!req && !isTemplateGen && !chatInferOn) {
+        if (!req && !chatInferOn) {
             toastr.warning("请输入要求");
             store.isProcessing = false;
             return;
@@ -714,28 +495,23 @@ export function bindEvents() {
                 request: req || '',
                 currentText: existingResult,
                 wiText: contextData.wi,
-                greetingsText: isTemplateGen ? '' : contextData.greetings,
+                greetingsText: contextData.greetings,
                 apiSource: $('#pw-api-source').val(), 
                 indepApiUrl: $('#pw-api-url').val(),
                 indepApiKey: $('#pw-api-key').val(), 
                 indepApiModel: modelVal
             };
-            const text = await runGeneration(config, config, isTemplateGen);
+            const text = await runGeneration(config, config);
             $('#pw-result-text').val(text);
             $('#pw-result-area').fadeIn();
             $('#pw-request').addClass('minimized');
-            if (isTemplateGen) {
-                $('#pw-btn-apply-template').show();
-            }
             saveCurrentState();
             $('#pw-result-text').trigger('input');
         } catch (e) { 
             console.error(e);
             toastr.error(e.message); 
         } finally { 
-            if (isTemplateGen) {
-                $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成模版');
-            } else if (chatInferOn) {
+            if (chatInferOn) {
                 $btn.prop('disabled', false).html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
             } else {
                 $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
@@ -1064,124 +840,6 @@ export function bindEvents() {
         $cb.prop('checked', !$cb.prop('checked')).trigger('change');
     });
 
-    // === Avatar Reference System ===
-
-    $(document).on('click.pw', '.pw-avatar-strip-img', function () {
-        const id = $(this).data('avatar-id');
-        if (!store.uiStateCache.avatarRef.selectedIds) store.uiStateCache.avatarRef.selectedIds = [];
-        const sel = store.uiStateCache.avatarRef.selectedIds;
-        const idx = sel.indexOf(id);
-        if (idx >= 0) { sel.splice(idx, 1); $(this).removeClass('selected'); }
-        else { sel.push(id); $(this).addClass('selected'); }
-        $('#pw-avatar-ref-row').toggleClass('active', sel.length > 0);
-        const $badge = $('#pw-avatar-count-badge');
-        if (sel.length > 0) { $badge.text(sel.length).addClass('visible'); }
-        else { $badge.removeClass('visible'); }
-        saveCurrentState();
-    });
-
-    $(document).on('change.pw', '#pw-avatar-upload', async function () {
-        const files = this.files;
-        if (!files || files.length === 0) return;
-        let addedCount = 0;
-        for (const file of files) {
-            if (!file.type.startsWith('image/')) continue;
-            try {
-                const rawBase64 = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                });
-                const base64 = await compressImage(rawBase64, 512, 0.7);
-                store.avatarImagesCache.push({
-                    id: generateId(),
-                    name: file.name.replace(/\.[^.]+$/, ''),
-                    base64: base64,
-                    tags: ['user'],
-                    addedAt: Date.now()
-                });
-                addedCount++;
-            } catch (e) { console.warn("[PW] Failed to read image:", e); }
-        }
-        saveAvatarImages();
-        renderAvatarMgmt();
-        renderAvatarStrip();
-        toastr.success(`已添加 ${addedCount} 张图片（已压缩）`);
-        $(this).val('');
-    });
-
-    $(document).on('click.pw', '.pw-avatar-tag', function () {
-        const $card = $(this).closest('.pw-avatar-card');
-        const imgId = $card.data('img-id');
-        const tag = $(this).data('tag');
-        const img = store.avatarImagesCache.find(i => i.id === imgId);
-        if (!img) return;
-        if (!img.tags) img.tags = [];
-        const idx = img.tags.indexOf(tag);
-        if (idx >= 0) { img.tags.splice(idx, 1); $(this).removeClass('active'); }
-        else { img.tags.push(tag); $(this).addClass('active'); }
-        saveAvatarImages();
-        renderAvatarStrip();
-    });
-
-    $(document).on('click.pw', '.pw-avatar-card-del', function () {
-        const $card = $(this).closest('.pw-avatar-card');
-        const imgId = $card.data('img-id');
-        const idx = store.avatarImagesCache.findIndex(i => i.id === imgId);
-        if (idx >= 0) {
-            store.avatarImagesCache.splice(idx, 1);
-            store.uiStateCache.avatarRef.selectedIds = (store.uiStateCache.avatarRef.selectedIds || []).filter(id => id !== imgId);
-            saveAvatarImages();
-            saveCurrentState();
-            $card.fadeOut(200, () => { $card.remove(); renderAvatarStrip(); });
-        }
-    });
-
-    $(document).on('click.pw', '.pw-avatar-card-name', function () {
-        const $card = $(this).closest('.pw-avatar-card');
-        const imgId = $card.data('img-id');
-        const img = store.avatarImagesCache.find(i => i.id === imgId);
-        if (!img) return;
-        const currentName = img.name || '';
-        const $input = $('<input type="text" class="pw-input">').val(currentName).css({ fontSize: '0.78em', padding: '2px 4px', width: '100%', textAlign: 'center' });
-        $(this).replaceWith($input);
-        $input.focus().select();
-        const save = () => {
-            const newName = $input.val().trim() || '未命名';
-            img.name = newName;
-            saveAvatarImages();
-            const $newName = $('<span class="pw-avatar-card-name" title="点击编辑名称"></span>').text(newName);
-            $input.replaceWith($newName);
-        };
-        $input.on('blur', save).on('keydown', function(ev) { if (ev.key === 'Enter') save(); });
-    });
-
-    $(document).on('click.pw', '.pw-avatar-mgmt-toggle', function () {
-        const $body = $('#pw-avatar-mgmt-body');
-        const $icon = $(this).find('i').last();
-        $body.stop(true, true);
-        if ($body.is(':visible')) {
-            $body.slideUp(200);
-            $icon.removeClass('fa-chevron-up').addClass('fa-chevron-down');
-        } else {
-            renderAvatarMgmt();
-            $body.slideDown(200);
-            $icon.removeClass('fa-chevron-down').addClass('fa-chevron-up');
-        }
-    });
-
-    $(document).on('click.pw', '#pw-avatar-add-btn', function () {
-        $('.pw-tab[data-tab="context"]').click();
-        setTimeout(() => {
-            const $section = $('#pw-avatar-mgmt-section');
-            if ($section.length) $section[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 200);
-    });
-
-    renderAvatarMgmt();
-    renderAvatarStrip();
-
     function updateChatInferSummary() {
         const conf = store.uiStateCache.chatHistory || {};
         const enabled = conf.enabled;
@@ -1306,13 +964,13 @@ export function bindEvents() {
         const $refineBtn = $('#pw-btn-refine');
         const $refineInput = $('#pw-refine-input');
         if (enabled) {
-            if (!store.isEditingTemplate) $btn.html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
+            $btn.html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
             $refineBtn.find('.pw-refine-btn-text').text('更新');
             $refineBtn.find('i').removeClass('fa-magic').addClass('fa-rotate');
             $refineBtn.attr('title', '基于聊天记录更新人设');
             $refineInput.attr('placeholder', '输入更新方向，或留空直接基于聊天记录更新...');
         } else {
-            if (!store.isEditingTemplate) $btn.html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
+            $btn.html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
             $refineBtn.find('.pw-refine-btn-text').text('润色');
             $refineBtn.find('i').removeClass('fa-rotate').addClass('fa-magic');
             $refineBtn.attr('title', '执行润色');

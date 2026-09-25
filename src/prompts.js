@@ -157,13 +157,11 @@ Output ONLY the YAML data matching the schema, with every field populated.`,
 2. Extract personality traits, speech patterns, values, habits, relationships, and other characteristics revealed through dialogue.
 3. Priority of information sources:
    (a) Direct evidence from the chat history and source materials.
-   (b) Attached avatar / reference images (for appearance-related fields).
    (c) Reasonable, context-consistent inference derived from tone, worldview, relationships, and common sense.
 4. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field in the target schema with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from chat/images, generate the most reasonable value consistent with the observed personality, context, and worldview — but do NOT contradict existing evidence.
 5. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the user character has NOT YET reached or experienced in the chat history / source materials (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; an event scheduled for later in the story). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. Bare "未知" / "N/A" / "TBD" without a contextual reason is still forbidden.
 6. If an existing profile is provided above, PRESERVE content still consistent with the chat, ADD newly revealed traits, UPDATE evolved traits, and ENRICH with observed patterns. Any field that was previously blank MUST now be filled (subject to rules 4 and 5).
 7. If no existing profile is provided, create a complete new profile from scratch.
-8. When avatar / reference images are attached, you MUST use them to fully populate appearance-related fields (hair, eyes, skin, face, build, typical outfit, etc.). Appearance fields must never remain blank when an image is provided.
 9. Pay special attention to: tone of voice, emotional reactions, decision-making patterns, relationship dynamics, recurring themes.
 
 [Constraint]: STRICTLY YAML DATA ONLY. No explanations, no scene descriptions. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 5). Before finishing, silently re-check the output and fill in any field that is still blank.

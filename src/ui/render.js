@@ -1,7 +1,6 @@
 // UI 渲染函数簇：各视图的 DOM 输出，与 events.js（输入接线）分离。
 // window.pwExtraBooks/pwPinnedBooks 由 world-info.js 模块顶层初始化，这里只消费不初始化。
-import { store, getCurrentTemplate, loadData, saveData, loadState } from "../state.js";
-import { parseYamlToBlocks } from "../yaml.js";
+import { store, loadData, saveData, loadState } from "../state.js";
 import { getCharacterGreetingsList } from "../st-data.js";
 import { getContextWorldBooks, getWorldBookEntries, loadWiSelection, saveWiSelection, savePinnedBooks, getPosFilterCode, getPosAbbr } from "../world-info.js";
 
@@ -31,74 +30,6 @@ export function autoBindGreetings() {
         }
     }
 }
-
-export function renderAvatarStrip() {
-    const $strip = $('#pw-avatar-strip');
-    if (!$strip.length) return;
-    $strip.empty();
-    const items = [];
-    if (store.currentUserAvatarBase64) {
-        items.push({ id: '__user_current__', base64: store.currentUserAvatarBase64, name: 'User 当前头像' });
-    }
-    store.avatarImagesCache.filter(img => img.tags && img.tags.includes('user')).forEach(img => items.push(img));
-    if (items.length === 0) {
-        $strip.html('<span style="font-size:0.75em; opacity:0.4; white-space:nowrap;">暂无图片，前往参考页上传</span>');
-        return;
-    }
-    const sel = store.uiStateCache.avatarRef.selectedIds || [];
-    items.forEach(item => {
-        const isSelected = sel.includes(item.id);
-        const $img = $(`<img class="pw-avatar-strip-img ${isSelected ? 'selected' : ''}" data-avatar-id="${item.id}" src="${item.base64}" title="${item.name || ''}">`);
-        $strip.append($img);
-    });
-}
-
-export function renderAvatarMgmt() {
-    const $list = $('#pw-avatar-mgmt-grid');
-    if (!$list.length) return;
-    $list.empty();
-    if (store.avatarImagesCache.length === 0) {
-        $list.html('<div style="font-size:0.8em; opacity:0.4; padding:8px; text-align:center;">暂无上传图片</div>');
-        return;
-    }
-    store.avatarImagesCache.forEach(img => {
-        const hasUser = img.tags && img.tags.includes('user');
-        const $item = $(`
-            <div class="pw-avatar-card" data-img-id="${img.id}">
-                <div class="pw-avatar-card-top">
-                    <img src="${img.base64}" class="pw-avatar-card-img">
-                    <span class="pw-avatar-card-del" title="删除"><i class="fa-solid fa-xmark"></i></span>
-                </div>
-                <span class="pw-avatar-card-name" title="点击编辑名称">${img.name || '未命名'}</span>
-                <div class="pw-avatar-card-tags">
-                    <span class="pw-avatar-tag ${hasUser ? 'active' : ''}" data-tag="user">User</span>
-                </div>
-            </div>
-        `);
-        $list.append($item);
-    });
-}
-
-export const renderTemplateChips = () => {
-    const $container = $('#pw-template-chips').empty();
-    const blocks = parseYamlToBlocks(getCurrentTemplate());
-    blocks.forEach((content, key) => {
-        const $chip = $(`<div class="pw-tag-chip"><i class="fa-solid fa-cube" style="opacity:0.5; margin-right:4px;"></i><span>${key}</span></div>`);
-        $chip.on('click', () => {
-            const $text = $('#pw-request');
-            const cur = $text.val();
-            const prefix = (cur && !cur.endsWith('\n') && cur.length > 0) ? '\n\n' : '';
-            let insertText = key + ":";
-            if (content && content.trim()) {
-                if (content.includes('\n') || content.startsWith(' ')) insertText += "\n" + content;
-                else insertText += " " + content;
-            } else insertText += " ";
-            $text.val(cur + prefix + insertText).focus();
-            $text.scrollTop($text[0].scrollHeight);
-        });
-        $container.append($chip);
-    });
-};
 
 // [Fix 7] History Filter Logic Update
 export const renderHistoryList = () => {
@@ -206,21 +137,9 @@ export const renderHistoryList = () => {
         $el.on('click', function (e) {
             if ($(e.target).closest('.pw-hist-action-btn, .pw-hist-title-input').length) return;
 
-            if (type.includes('template')) {
-                $('#pw-template-text').val(previewText);
-                store.userContext.template = previewText;
-                saveData();
-                renderTemplateChips();
-                $('.pw-tab[data-tab="editor"]').click();
-                if (!store.isEditingTemplate) {
-                     $('#pw-toggle-edit-template').click();
-                }
-                toastr.success("已加载选中的模版");
-            } else {
-                $('#pw-request').val(item.request); $('#pw-result-text').val(previewText); $('#pw-result-area').show();
-                $('#pw-request').addClass('minimized');
-                $('.pw-tab[data-tab="editor"]').click();
-            }
+            $('#pw-request').val(item.request); $('#pw-result-text').val(previewText); $('#pw-result-area').show();
+            $('#pw-request').addClass('minimized');
+            $('.pw-tab[data-tab="editor"]').click();
         });
         $el.find('.pw-hist-action-btn.del').on('click', function (e) {
             e.stopPropagation();

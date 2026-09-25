@@ -9,13 +9,15 @@ import { getContext } from "../../../../extensions.js";
 // Storage Keys
 const STORAGE_KEY_HISTORY = 'pw_history_v29_new_template'; 
 const STORAGE_KEY_STATE = 'pw_state_v20';
-const STORAGE_KEY_TEMPLATE = 'pw_template_v6_new_yaml'; 
 const STORAGE_KEY_PROMPTS = 'pw_prompts_v21_restore_edit'; 
 export const STORAGE_KEY_WI_STATE = 'pw_wi_selection_v1';
 const STORAGE_KEY_UI_STATE = 'pw_ui_state_v4_preset';          
 const STORAGE_KEY_DATA_USER = 'pw_data_user_v1'; 
 export const STORAGE_KEY_PINNED_BOOKS = 'pw_pinned_books_v1';
-const STORAGE_KEY_AVATAR_IMAGES = 'pw_avatar_images_v1';
+
+// 已删除特性独占的持久化键（手动模板、外貌参考图）。键名是历史发布过的契约，只能写死于此处做
+// 存量清理——loadData 时逐次 removeItem，幂等。
+const RETIRED_STORAGE_KEYS = ['pw_template_v6_new_yaml', 'pw_avatar_images_v1'];
 
 export const store = {
     historyCache: [],
@@ -27,13 +29,10 @@ export const store = {
         initial: FALLBACK_SYSTEM_PROMPT
     },
     availableWorldBooks: [],
-    isEditingTemplate: false,
     isProcessing: false,
     currentGreetingsList: [],
     wiSelectionCache: {},
-    uiStateCache: { templateExpanded: true, generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } },
-    avatarImagesCache: [], // [{id, name, base64, tags:['user'], addedAt}]
-    currentUserAvatarBase64: null, // pre-loaded on panel open
+    uiStateCache: { generationPreset: 'current', chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } },
     historyPage: 1,
     lastRefineRequest: "",
     userContext: { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false },
@@ -119,30 +118,22 @@ export function loadData() {
     try { store.wiSelectionCache = JSON.parse(localStorage.getItem(STORAGE_KEY_WI_STATE)) || {}; } catch { store.wiSelectionCache = {}; }
     
     // [Updated] Load UI State with Preset info + chatHistory config
-    const defaultUiState = { templateExpanded: true, generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
+    const defaultUiState = { generationPreset: 'current', chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
     try {
         store.uiStateCache = JSON.parse(localStorage.getItem(STORAGE_KEY_UI_STATE)) || defaultUiState;
         if (!store.uiStateCache.chatHistory) store.uiStateCache.chatHistory = { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] };
-        if (!store.uiStateCache.avatarRef || typeof store.uiStateCache.avatarRef === 'boolean') {
-            store.uiStateCache.avatarRef = { enabled: !!store.uiStateCache.avatarRef, selectedIds: [] };
-        } else if (!Array.isArray(store.uiStateCache.avatarRef.selectedIds)) {
-            store.uiStateCache.avatarRef.selectedIds = [];
-        }
     } catch { store.uiStateCache = defaultUiState; }
-    // 清理主题系统遗留的存量数据（theme 字段已无任何消费者）
+    // 清理已删除特性的存量字段（模板编辑器 / 外貌参考图）与主题系统遗留（theme 字段已无任何消费者）
+    delete store.uiStateCache.templateExpanded;
+    delete store.uiStateCache.avatarRef;
     delete store.uiStateCache.theme;
     localStorage.removeItem('pw_custom_themes_v1');
-
-    try { store.avatarImagesCache = JSON.parse(localStorage.getItem(STORAGE_KEY_AVATAR_IMAGES)) || []; } catch { store.avatarImagesCache = []; }
+    RETIRED_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
 
     // Load Isolated Context Data
     try {
         const u = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA_USER));
         store.userContext = u || { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false };
-        if(!u) {
-            const oldT = localStorage.getItem(STORAGE_KEY_TEMPLATE);
-            if(oldT && oldT.length > 50) store.userContext.template = oldT;
-        }
     } catch { store.userContext = { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false }; }
 }
 
@@ -160,17 +151,10 @@ export function saveHistory(item) {
         const context = getContext();
         const userName = $('.persona_name').first().text().trim() || "User";
         const charName = context.characters[context.characterId]?.name || "Char";
-        
-        if (item.data && item.data.type === 'template') {
-            item.title = `User模版 (${charName})`;
-        } else {
-            item.title = `${userName} & ${charName}`;
-        }
+        item.title = `${userName} & ${charName}`;
     }
     
-    if (!item.data.genType) {
-        item.data.genType = item.data.type === 'template' ? 'user_template' : 'user_persona';
-    }
+    if (!item.data.genType) item.data.genType = 'user_persona';
 
     store.historyCache.unshift(item);
     if (store.historyCache.length > limit) store.historyCache = store.historyCache.slice(0, limit);
@@ -179,5 +163,3 @@ export function saveHistory(item) {
 
 export function saveState(data) { safeLocalStorageSet(STORAGE_KEY_STATE, JSON.stringify(data)); }
 export function loadState() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY_STATE)) || {}; } catch { return {}; } }
-
-export function saveAvatarImages() { safeLocalStorageSet(STORAGE_KEY_AVATAR_IMAGES, JSON.stringify(store.avatarImagesCache)); }

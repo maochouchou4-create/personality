@@ -292,21 +292,7 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
             .replace(/{{chatHistory}}/g, wrappedChatHistory);
     }
 
-    // Collect selected avatar images (auto-enabled when any image is selected)
-    const avatarConf = store.uiStateCache.avatarRef || {};
-    const selectedAvatarImages = [];
-    if (!isTemplateMode && avatarConf.selectedIds && avatarConf.selectedIds.length > 0) {
-        for (const id of avatarConf.selectedIds) {
-            if (id === '__user_current__' && store.currentUserAvatarBase64) {
-                selectedAvatarImages.push(store.currentUserAvatarBase64);
-            } else {
-                const img = store.avatarImagesCache.find(i => i.id === id);
-                if (img && img.base64) selectedAvatarImages.push(img.base64);
-            }
-        }
-    }
-
-    console.log(`[PW] Sending Prompt...${selectedAvatarImages.length ? ` [+${selectedAvatarImages.length} images]` : ''}`);
+    console.log("[PW] Sending Prompt...");
     
     let responseContent = "";
     const controller = new AbortController();
@@ -330,18 +316,7 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
         }
         if (wrappedWi && wrappedWi.trim().length > 0) promptArray.push({ role: 'system', content: wrappedWi });
 
-        if (selectedAvatarImages.length > 0) {
-            const lifecycleHint = `For lifecycle / timeline fields whose stage the character has NOT yet reached (e.g. a 24-year-old's "中年_35至今" / "老年" stage, an unborn descendant, a future plot beat), you MAY use a narrative-meaningful placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」 — this applies generically to ANY user template's time-locked fields. Bare "未知" / "N/A" without a contextual reason is still forbidden.`;
-            const avatarHint = `[User Avatar Image(s): The above ${selectedAvatarImages.length > 1 ? 'images are' : 'image is'} the user's avatar/profile pictures. Use them to FULLY populate appearance-related fields (hair, eyes, skin tone, face shape, build, typical outfit, age impression, etc.) — appearance fields MUST NOT remain blank. For fields not visible in the image, still produce reasonable, context-consistent values based on chat history, source materials, and the overall persona; the final YAML MUST have NO empty fields. ${lifecycleHint}]`;
-            const contentBlocks = [];
-            selectedAvatarImages.forEach(b64 => {
-                contentBlocks.push({ type: "image_url", image_url: { url: b64 } });
-            });
-            contentBlocks.push({ type: "text", text: avatarHint + "\n\n" + userMessageContent });
-            promptArray.push({ role: 'user', content: contentBlocks });
-        } else {
-            promptArray.push({ role: 'user', content: userMessageContent });
-        }
+        promptArray.push({ role: 'user', content: userMessageContent });
         
         const promptArrayNoPrefill = promptArray.map(m => ({ ...m }));
 
@@ -358,28 +333,8 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
                     baseUrl = baseUrl.replace(/\/v1\/messages$/, '').replace(/\/v1$/, '');
                     url = `${baseUrl}/v1/messages`;
 
-                    const systemParts = messages.filter(m => m.role === 'system').map(m =>
-                        Array.isArray(m.content)
-                            ? (m.content.filter(b => b.type === 'text').map(b => b.text).join('\n') || '')
-                            : String(m.content ?? '')
-                    );
-                    const nonSystem = messages.filter(m => m.role !== 'system').map(m => {
-                        if (Array.isArray(m.content)) {
-                            const anthropicContent = m.content.map(block => {
-                                if (block.type === 'image_url' && block.image_url?.url) {
-                                    const dataUrl = block.image_url.url;
-                                    const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
-                                    if (match) {
-                                        return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
-                                    }
-                                }
-                                if (block.type === 'text') return { type: 'text', text: block.text };
-                                return block;
-                            });
-                            return { ...m, content: anthropicContent };
-                        }
-                        return m;
-                    });
+                    const systemParts = messages.filter(m => m.role === 'system').map(m => String(m.content ?? ''));
+                    const nonSystem = messages.filter(m => m.role !== 'system');
 
                     headers = {
                         'Content-Type': 'application/json',
