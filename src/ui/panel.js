@@ -81,7 +81,6 @@ export async function openCreatorPopup() {
             <div class="pw-tab active" data-tab="editor">人设</div>
             <div class="pw-tab" data-tab="context">参考</div> 
             <div class="pw-tab" data-tab="api">API</div>
-            <div class="pw-tab" data-tab="history">记录</div>
         </div>
     </div>
 
@@ -115,7 +114,6 @@ export async function openCreatorPopup() {
             <div class="pw-footer-group">
                 <div class="pw-compact-btn danger" id="pw-clear" title="清空"><i class="fa-solid fa-eraser"></i></div>
                 <div class="pw-compact-btn" id="pw-copy-persona" title="复制内容"><i class="fa-solid fa-copy"></i></div>
-                <div class="pw-compact-btn" id="pw-snapshot" title="保存至记录"><i class="fa-solid fa-save"></i></div>
             </div>
             <div class="pw-footer-group" style="flex:1; justify-content:flex-end; gap: 8px;">
                 <button class="pw-btn wi" id="pw-btn-save-wi">保存至世界书</button>
@@ -252,41 +250,6 @@ export async function openCreatorPopup() {
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- History View with Pagination -->
-    <div id="pw-view-history" class="pw-view">
-        <div class="pw-scroll-area">
-            <!-- Detailed History Types -->
-            <div class="pw-history-filters" style="display:flex; gap:5px; margin-bottom:8px;">
-                <select id="pw-hist-filter-type" class="pw-input" style="flex:1;">
-                    <option value="all">所有类型</option>
-                    <option value="user_persona">User人设</option>
-                    <option value="npc_persona">NPC人设</option>
-                    <option value="npc_template">NPC模板</option>
-                </select>
-                <select id="pw-hist-filter-char" class="pw-input" style="flex:1;">
-                    <option value="all">所有角色</option>
-                    <!-- Populated via JS -->
-                </select>
-            </div>
-
-            <div class="pw-search-box">
-                <i class="fa-solid fa-search pw-search-icon"></i>
-                <input type="text" id="pw-history-search" class="pw-input pw-search-input" placeholder="搜索历史...">
-                <i class="fa-solid fa-times pw-search-clear" id="pw-history-search-clear" title="清空搜索"></i>
-            </div>
-            
-            <div id="pw-history-list" style="display:flex; flex-direction:column;"></div>
-            
-            <div class="pw-pagination">
-                <button class="pw-page-btn" id="pw-hist-prev"><i class="fa-solid fa-chevron-left"></i></button>
-                <span class="pw-page-info" id="pw-hist-page-info">1 / 1</span>
-                <button class="pw-page-btn" id="pw-hist-next"><i class="fa-solid fa-chevron-right"></i></button>
-            </div>
-
-            <button id="pw-history-clear-all" class="pw-btn" style="margin-top:15px;">清空所有记录</button>
         </div>
     </div>
 </div>

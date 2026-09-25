@@ -1,13 +1,10 @@
-// 内存状态单容器（store）与 localStorage 持久化簇。
+// 内存状态单容器（store）与 localStorage 持久化簇。本模块是纯数据/持久化叶子，不依赖 ST 宿主。
 // store 必须整体导入后做属性赋值——ESM 具名导入绑定只读，散装 let 无法跨模块改写。
 // STORAGE_KEY_* 与用户浏览器存量数据是持久化契约：键名一经发布不可再改。
-// 唯一的 ST 宿主依赖：saveHistory 入库时需从当前角色上下文补全标题。
 import { DEFAULT_PROMPTS, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
 import { TEXT } from "./strings.js";
-import { getContext } from "../../../../extensions.js";
 
 // Storage Keys
-const STORAGE_KEY_HISTORY = 'pw_history_v29_new_template'; 
 const STORAGE_KEY_STATE = 'pw_state_v20';
 const STORAGE_KEY_PROMPTS = 'pw_prompts_v21_restore_edit'; 
 export const STORAGE_KEY_WI_STATE = 'pw_wi_selection_v1';
@@ -15,16 +12,15 @@ const STORAGE_KEY_UI_STATE = 'pw_ui_state_v4_preset';
 const STORAGE_KEY_DATA_USER = 'pw_data_user_v1'; 
 export const STORAGE_KEY_PINNED_BOOKS = 'pw_pinned_books_v1';
 
-// 已删除特性独占的持久化键（手动模板、外貌参考图、NPC 上下文）。键名是历史发布过的契约，只能写死于此处做
-// 存量清理——loadData 时逐次 removeItem，幂等。
-const RETIRED_STORAGE_KEYS = ['pw_template_v6_new_yaml', 'pw_avatar_images_v1', 'pw_data_npc_v1'];
+// 已删除特性独占的持久化键（手动模板、外貌参考图、NPC 上下文、历史草稿）。键名是历史发布过的契约，只能写死于
+// 此处做存量清理——loadData 时逐次 removeItem，幂等。
+const RETIRED_STORAGE_KEYS = ['pw_template_v6_new_yaml', 'pw_avatar_images_v1', 'pw_data_npc_v1', 'pw_history_v29_new_template'];
 
 // userContext 的规范形状（编辑器工作现场暂存：需求框/结果框，refine 的目标缓冲区即 result）；
 // 旧形状的 template/curatedSchema 字段已淘汰，loadData 按字段重建对象即完成迁移。
 const defaultUserContext = () => ({ request: "", result: "", hasResult: false });
 
 export const store = {
-    historyCache: [],
     promptsCache: {
         personaGen: DEFAULT_PROMPTS.personaGen,
         curator: DEFAULT_PROMPTS.curator,
@@ -35,7 +31,6 @@ export const store = {
     currentGreetingsList: [],
     wiSelectionCache: {},
     uiStateCache: { generationPreset: 'current' },
-    historyPage: 1,
     lastRefineRequest: "",
     userContext: defaultUserContext(),
     currentDiffBlocks: [],
@@ -56,7 +51,6 @@ export function safeLocalStorageSet(key, value) {
 }
 
 export function loadData() {
-    try { store.historyCache = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY)) || []; } catch { store.historyCache = []; }
     try {
         const p = JSON.parse(localStorage.getItem(STORAGE_KEY_PROMPTS));
         // v3.4.6 引入的"生命周期/时间线豁免"标识，用于识别旧版默认值
@@ -123,27 +117,9 @@ export function loadData() {
 }
 
 export function saveData() {
-    safeLocalStorageSet(STORAGE_KEY_HISTORY, JSON.stringify(store.historyCache));
     safeLocalStorageSet(STORAGE_KEY_PROMPTS, JSON.stringify(store.promptsCache));
     safeLocalStorageSet(STORAGE_KEY_UI_STATE, JSON.stringify(store.uiStateCache));
     safeLocalStorageSet(STORAGE_KEY_DATA_USER, JSON.stringify(store.userContext));
-}
-
-export function saveHistory(item) {
-    const limit = 1000; 
-
-    if (!item.title || item.title === "未命名") {
-        const context = getContext();
-        const userName = $('.persona_name').first().text().trim() || "User";
-        const charName = context.characters[context.characterId]?.name || "Char";
-        item.title = `${userName} & ${charName}`;
-    }
-    
-    if (!item.data.genType) item.data.genType = 'user_persona';
-
-    store.historyCache.unshift(item);
-    if (store.historyCache.length > limit) store.historyCache = store.historyCache.slice(0, limit);
-    saveData();
 }
 
 export function saveState(data) { safeLocalStorageSet(STORAGE_KEY_STATE, JSON.stringify(data)); }

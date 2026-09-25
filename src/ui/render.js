@@ -1,10 +1,9 @@
 // UI 渲染函数簇：各视图的 DOM 输出，与 events.js（输入接线）分离。
 // window.pwExtraBooks/pwPinnedBooks 由 world-info.js 模块顶层初始化，这里只消费不初始化。
-import { store, loadData, saveData, loadState } from "../state.js";
+import { store, loadState } from "../state.js";
 import { getCharacterGreetingsList } from "../st-data.js";
 import { getContextWorldBooks, getWorldBookEntries, loadWiSelection, saveWiSelection, savePinnedBooks, getPosFilterCode, getPosAbbr } from "../world-info.js";
 
-export const HISTORY_PER_PAGE = 20;
 export function autoBindGreetings() {
     if (window.TavernHelper && window.TavernHelper.getChatMessages) {
         try {
@@ -30,127 +29,6 @@ export function autoBindGreetings() {
         }
     }
 }
-
-// [Fix 7] History Filter Logic Update
-export const renderHistoryList = () => {
-    loadData();
-    const $list = $('#pw-history-list').empty();
-    
-    const $filterChar = $('#pw-hist-filter-char');
-    const currentCharFilter = $filterChar.val();
-    
-    const chars = new Set();
-    store.historyCache.forEach(item => {
-        const title = item.title || "";
-        // [Fix 3] New title format parsing
-        // NPC: "NPC：Name @ Char"
-        // User: "User & Char" or "User模版 (Char)"
-        let charName = "";
-        if (title.includes(' @ ')) {
-            const parts = title.split(' @ ');
-            if (parts.length > 1) charName = parts[1].trim();
-        } else if (title.includes(' (')) {
-            const parts = title.split(' (');
-            charName = parts[parts.length - 1].replace(')', '').trim();
-        } else if (title.includes('&')) {
-            const parts = title.split('&');
-            if (parts.length > 1) charName = parts[1].trim();
-        }
-        
-        if(charName) chars.add(charName);
-    });
-    
-    if ($filterChar.children().length <= 1) {
-        Array.from(chars).sort().forEach(c => $filterChar.append(`<option value="${c}">${c}</option>`));
-        $filterChar.val(currentCharFilter || 'all');
-    }
-
-    const filterType = $('#pw-hist-filter-type').val();
-    const filterChar = $('#pw-hist-filter-char').val();
-    const search = $('#pw-history-search').val().toLowerCase();
-    
-    let filtered = store.historyCache.filter(item => {
-        if (item.data && item.data.type === 'opening') return false; 
-        
-        // Accurate Type Filtering
-        const type = item.data.genType || item.data.type;
-        // 存量模板条目保留在 localStorage 但不展示（仅跳过渲染，不删数据）
-        if (type === 'template' || type === 'user_template') return false;
-        if (filterType !== 'all') {
-            if (filterType === 'user_persona' && type !== 'user_persona' && type !== 'persona') return false;
-            if (filterType === 'npc_persona' && type !== 'npc_persona' && type !== 'npc') return false;
-            if (filterType === 'npc_template' && type !== 'npc_template') return false;
-        }
-
-        if (filterChar !== 'all') {
-            if (!item.title.includes(filterChar)) return false;
-        }
-
-        if (!search) return true;
-        const content = (item.data.resultText || "").toLowerCase();
-        const title = (item.title || "").toLowerCase();
-        return title.includes(search) || content.includes(search);
-    });
-    
-    const totalPages = Math.ceil(filtered.length / HISTORY_PER_PAGE) || 1;
-    if (store.historyPage > totalPages) store.historyPage = totalPages;
-    $('#pw-hist-page-info').text(`${store.historyPage} / ${totalPages}`);
-    $('#pw-hist-prev').prop('disabled', store.historyPage <= 1);
-    $('#pw-hist-next').prop('disabled', store.historyPage >= totalPages);
-
-    const start = (store.historyPage - 1) * HISTORY_PER_PAGE;
-    const paginated = filtered.slice(start, start + HISTORY_PER_PAGE);
-
-    if (paginated.length === 0) { $list.html('<div style="text-align:center; opacity:0.6; padding:20px;">暂无记录</div>'); return; }
-
-    paginated.forEach((item, index) => {
-        const previewText = item.data.resultText || '无内容';
-        const displayTitle = item.title || "User & Char";
-        const type = item.data.genType || item.data.type;
-
-        let badgeHtml = '';
-        if (type === 'npc_template') {
-            badgeHtml = '<span class="pw-badge template" style="background:rgba(255, 165, 0, 0.2); color:#ffbc42;">模版(N)</span>';
-        } else if (type === 'npc_persona' || type === 'npc') {
-            badgeHtml = '<span class="pw-badge npc" style="background:rgba(155, 89, 182, 0.2); color:#a569bd; border:1px solid rgba(155, 89, 182, 0.4);">NPC</span>';
-        } else {
-            badgeHtml = '<span class="pw-badge persona">User</span>';
-        }
-
-        const $el = $(`
-        <div class="pw-history-item">
-            <div class="pw-hist-main">
-                <div class="pw-hist-header">
-                    <span class="pw-hist-title-display">${badgeHtml} ${displayTitle}</span>
-                    <input type="text" class="pw-hist-title-input" value="${displayTitle}" style="display:none;">
-                    <div style="display:flex; gap:5px; flex-shrink:0;">
-                        <i class="fa-solid fa-pen pw-hist-action-btn edit" title="编辑标题"></i>
-                        <i class="fa-solid fa-trash pw-hist-action-btn del" data-index="${index}" title="删除"></i>
-                    </div>
-                </div>
-                <div class="pw-hist-meta"><span>${item.timestamp || ''}</span></div>
-                <div class="pw-hist-desc">${previewText}</div>
-            </div>
-        </div>
-    `);
-        $el.on('click', function (e) {
-            if ($(e.target).closest('.pw-hist-action-btn, .pw-hist-title-input').length) return;
-
-            $('#pw-request').val(item.request); $('#pw-result-text').val(previewText); $('#pw-result-area').show();
-            $('#pw-request').addClass('minimized');
-            $('.pw-tab[data-tab="editor"]').click();
-        });
-        $el.find('.pw-hist-action-btn.del').on('click', function (e) {
-            e.stopPropagation();
-            if (confirm("删除?")) {
-                const realIndex = (store.historyPage - 1) * HISTORY_PER_PAGE + index;
-                store.historyCache.splice(realIndex, 1);
-                saveData(); renderHistoryList();
-            }
-        });
-        $list.append($el);
-    });
-};
 
 // ---[新增] 渲染 API 配置预设下拉框 ---
 export function renderApiProfiles() {

@@ -1,13 +1,13 @@
 // 全部事件绑定的注册（接线层）。按视图内拆是后置清单——闭包共享状态需先重构，本批只整体搬移。
 // addPersonaButton 与 bindEvents 同文件：bindEvents 将其注册为 APP_READY/MOVABLE_PANELS_RESET 处理器，须同模块作用域。
 import { getContext } from "../../../../../extensions.js";
-import { store, loadData, saveData, saveHistory, loadState, saveState } from "../state.js";
+import { store, loadData, saveData, loadState, saveState } from "../state.js";
 import { getActivePersonaDescription } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
 import { forceSavePersona, syncToWorldInfoViaHelper, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
 import { TEXT } from "../strings.js";
-import { renderApiProfiles, renderHistoryList, renderWiBooks } from "./render.js";
+import { renderApiProfiles, renderWiBooks } from "./render.js";
 import { openCreatorPopup } from "./panel.js";
 
 const BUTTON_ID = 'pw_persona_tool_btn';
@@ -126,14 +126,6 @@ export function bindEvents() {
         $('#pw-preset-hint').text(getPresetHintText(val));
     });
 
-    $(document).on('click.pw', '#pw-hist-prev', () => { if (store.historyPage > 1) { store.historyPage--; renderHistoryList(); } });
-    $(document).on('click.pw', '#pw-hist-next', () => { store.historyPage++; renderHistoryList(); });
-
-    $(document).on('change.pw', '#pw-hist-filter-type, #pw-hist-filter-char', function() {
-        store.historyPage = 1;
-        renderHistoryList();
-    });
-
     $(document).on('change.pw', '#pw-greetings-select', function() {
         const idx = $(this).val();
         const $preview = $('#pw-greetings-preview');
@@ -172,10 +164,6 @@ export function bindEvents() {
         $('.pw-tab').removeClass('active'); $(this).addClass('active');
         $('.pw-view').removeClass('active');
         $(`#pw-view-${$(this).data('tab')}`).addClass('active');
-        if ($(this).data('tab') === 'history') {
-            store.historyPage = 1; // Reset to page 1
-            renderHistoryList();
-        }
     });
 
     let selectionTimeout;
@@ -634,51 +622,6 @@ export function bindEvents() {
         }
     });
 
-    $(document).on('click.pw', '#pw-snapshot', function () {
-        const text = $('#pw-result-text').val();
-        const req = $('#pw-request').val();
-        if (!text && !req) return toastr.warning("没有任何内容可保存");
-        saveHistory({ 
-            request: req || "无", 
-            timestamp: new Date().toLocaleString(), 
-            title: "", 
-            data: { 
-                name: "Persona", 
-                resultText: text || "(无)", 
-                type: 'persona'
-            } 
-        });
-        toastr.success(TEXT.TOAST_SNAPSHOT);
-    });
-
-    // [Fix 1] History Edit Fix: Stop Propagation
-    $(document).on('click.pw', '.pw-hist-action-btn.edit', function (e) {
-        e.stopPropagation();
-        const $header = $(this).closest('.pw-hist-header');
-        const $display = $header.find('.pw-hist-title-display');
-        const $input = $header.find('.pw-hist-title-input');
-        $display.hide(); $input.show().focus();
-        
-        const saveEdit = (ev) => {
-            if (ev) ev.stopPropagation(); // Stop bubble
-            const newVal = $input.val();
-            $display.text(newVal).show(); $input.hide();
-            const index = $header.closest('.pw-history-item').find('.pw-hist-action-btn.del').data('index');
-            if (store.historyCache[index]) { store.historyCache[index].title = newVal; saveData(); }
-            $(document).off('click.pw-hist-blur');
-        };
-        
-        $input.on('click', function(ev) { ev.stopPropagation(); });
-
-        $input.one('blur keyup', function (ev) { 
-            if (ev.type === 'keyup') {
-                if (ev.key === 'Enter') saveEdit(ev);
-                return;
-            }
-            saveEdit(ev); 
-        });
-    });
-
     $(document).on('change.pw', '#pw-api-source', function () { $('#pw-indep-settings').toggle($(this).val() === 'independent'); });
 
     $(document).on('click.pw', '#pw-api-fetch', async function (e) {
@@ -769,10 +712,6 @@ export function bindEvents() {
     });
 
     $(document).on('click.pw', '#pw-wi-add', () => { const val = $('#pw-wi-select').val(); if (val && !window.pwExtraBooks.includes(val)) { window.pwExtraBooks.push(val); renderWiBooks(); } });
-
-    $(document).on('input.pw', '#pw-history-search', function() { store.historyPage = 1; renderHistoryList(); });
-    $(document).on('click.pw', '#pw-history-search-clear', function () { $('#pw-history-search').val('').trigger('input'); });
-    $(document).on('click.pw', '#pw-history-clear-all', function () { if (confirm("清空?")) { store.historyCache = []; saveData(); renderHistoryList(); } });
 }
 
 export function addPersonaButton() {
