@@ -5,8 +5,6 @@ import { saveSettingsDebounced, callPopup, getRequestHeaders, saveChat, reloadCu
 const extensionName = "st-persona-weaver";
 const CURRENT_VERSION = "3.4.6"; // Lifecycle/Timeline exception for not-yet-happened fields
 
-const UPDATE_CHECK_URL = "https://raw.githubusercontent.com/sssilvia27/st-persona-weaver/main/manifest.json";
-
 // Storage Keys
 const STORAGE_KEY_HISTORY = 'pw_history_v29_new_template'; 
 const STORAGE_KEY_STATE = 'pw_state_v20';
@@ -14,7 +12,6 @@ const STORAGE_KEY_TEMPLATE = 'pw_template_v6_new_yaml';
 const STORAGE_KEY_PROMPTS = 'pw_prompts_v21_restore_edit'; 
 const STORAGE_KEY_WI_STATE = 'pw_wi_selection_v1';
 const STORAGE_KEY_UI_STATE = 'pw_ui_state_v4_preset';          
-const STORAGE_KEY_THEMES = 'pw_custom_themes_v1'; 
 const STORAGE_KEY_DATA_USER = 'pw_data_user_v1'; 
 const STORAGE_KEY_DATA_NPC = 'pw_data_npc_v1';
 const STORAGE_KEY_PINNED_BOOKS = 'pw_pinned_books_v1';
@@ -394,12 +391,10 @@ let lastRawResponse = "";
 let isProcessing = false;
 let currentGreetingsList = []; 
 let wiSelectionCache = {};
-let uiStateCache = { templateExpanded: true, theme: 'style.css', generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } }; 
+let uiStateCache = { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
 let avatarImagesCache = []; // [{id, name, base64, tags:['user'|'npc'], addedAt}]
 let currentUserAvatarBase64 = null; // pre-loaded on panel open
-let hasNewVersion = false;
-let customThemes = {}; 
-let historyPage = 1; 
+let historyPage = 1;
 let lastRefineRequest = ""; 
 
 let userContext = { template: defaultYamlTemplate, request: "", result: "", hasResult: false };
@@ -571,23 +566,6 @@ async function scanChatTags(limit = 30) {
         });
         return Object.entries(tagCounts).sort((a,b) => b[1] - a[1]).map(([tag, count]) => ({ tag, count }));
     } catch (e) { return []; }
-}
-
-async function checkForUpdates() {
-    try {
-        const res = await fetch(UPDATE_CHECK_URL, { cache: "no-cache" });
-        if (!res.ok) return null;
-        const manifest = await res.json();
-        const v1 = CURRENT_VERSION.split('.').map(Number);
-        const v2 = (manifest.version || "0.0.0").split('.').map(Number);
-        for (let i = 0; i < 3; i++) {
-            if (v2[i] > v1[i]) return manifest;
-            if (v2[i] < v1[i]) return null;
-        }
-        return null;
-    } catch (e) {
-        return null;
-    }
 }
 
 // ============================================================================
@@ -1021,26 +999,6 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
 
     // NPC多角色指令已在 defaultNpcGenPrompt 中包含，无需运行时注入
 
-    const updateDebugView = (messages) => {
-        let debugText = `=== 发送时间: ${new Date().toLocaleTimeString()} ===\n`;
-        const modeStr = isNpcMode ? 'NPC' : 'User';
-        const chatInferStr = chatInferEnabled ? ' [聊天推断]' : '';
-        debugText += `=== 模式: ${isTemplateMode ? `${modeStr}模版生成` : (data.mode === 'refine' ? `${modeStr}润色` : `${modeStr}人设生成`)}${chatInferStr} ===\n`;
-        debugText += `=== 预设策略: ${uiStateCache.generationPreset === 'pure' ? '✨ 纯净模式 (Pure Mode)' : (uiStateCache.generationPreset === 'current' ? '跟随酒馆预设 (Default)' : uiStateCache.generationPreset)} ===\n\n`;
-        messages.forEach((msg, idx) => {
-            debugText += `[BLOCK ${idx + 1}: ${msg.role.toUpperCase()}]\n`;
-            if (Array.isArray(msg.content)) {
-                const textParts = msg.content.filter(b => b.type === 'text').map(b => b.text);
-                const hasImage = msg.content.some(b => b.type === 'image_url');
-                debugText += `--- START ---\n${hasImage ? '[📷 User Avatar Image Attached]\n' : ''}${textParts.join('\n')}\n--- END ---\n\n`;
-            } else {
-                debugText += `--- START ---\n${msg.content}\n--- END ---\n\n`;
-            }
-        });
-        const $debugArea = $('#pw-debug-preview');
-        if ($debugArea.length) $debugArea.val(debugText);
-    };
-
     // Collect selected avatar images (auto-enabled when any image is selected)
     const avatarConf = uiStateCache.avatarRef || {};
     const selectedAvatarImages = [];
@@ -1097,8 +1055,6 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
         const promptArrayNoPrefill = promptArray.map(m => ({ ...m }));
 
         if (prefillContent) promptArray.push({ role: 'assistant', content: prefillContent });
-
-        updateDebugView(promptArray);
 
         const doRequest = async (messages) => {
             if (apiConfig.apiSource === 'independent') {
@@ -1365,7 +1321,7 @@ function loadData() {
     try { wiSelectionCache = JSON.parse(localStorage.getItem(STORAGE_KEY_WI_STATE)) || {}; } catch { wiSelectionCache = {}; }
     
     // [Updated] Load UI State with Preset info + chatHistory config
-    const defaultUiState = { templateExpanded: true, theme: 'style.css', generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
+    const defaultUiState = { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
     try {
         uiStateCache = JSON.parse(localStorage.getItem(STORAGE_KEY_UI_STATE)) || defaultUiState;
         if (!uiStateCache.chatHistory) uiStateCache.chatHistory = { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] };
@@ -1375,9 +1331,11 @@ function loadData() {
             uiStateCache.avatarRef.selectedIds = [];
         }
     } catch { uiStateCache = defaultUiState; }
-    
+    // 清理主题系统遗留的存量数据（theme 字段已无任何消费者）
+    delete uiStateCache.theme;
+    localStorage.removeItem('pw_custom_themes_v1');
+
     try { avatarImagesCache = JSON.parse(localStorage.getItem(STORAGE_KEY_AVATAR_IMAGES)) || []; } catch { avatarImagesCache = []; }
-    try { customThemes = JSON.parse(localStorage.getItem(STORAGE_KEY_THEMES)) || {}; } catch { customThemes = {}; }
 
     // Load Isolated Context Data
     try {
@@ -1399,7 +1357,6 @@ function saveData() {
     safeLocalStorageSet(STORAGE_KEY_HISTORY, JSON.stringify(historyCache));
     safeLocalStorageSet(STORAGE_KEY_PROMPTS, JSON.stringify(promptsCache));
     safeLocalStorageSet(STORAGE_KEY_UI_STATE, JSON.stringify(uiStateCache));
-    safeLocalStorageSet(STORAGE_KEY_THEMES, JSON.stringify(customThemes));
     safeLocalStorageSet(STORAGE_KEY_DATA_USER, JSON.stringify(userContext));
     safeLocalStorageSet(STORAGE_KEY_DATA_NPC, JSON.stringify(npcContext));
 }
@@ -1925,9 +1882,6 @@ async function openCreatorPopup() {
         if ($('#pw-avatar-strip').length) renderAvatarStrip();
     });
 
-    hasNewVersion = false; 
-    let updatePromise = checkForUpdates(); 
-
     const savedState = loadState();
     let localConfig = savedState.localConfig || {};
 
@@ -1963,13 +1917,10 @@ async function openCreatorPopup() {
     
     const charName = getContext().characters[getContext().characterId]?.name || "None";
     
-    const newBadge = `<span id="pw-new-badge" title="点击查看更新" style="display:none; cursor:pointer; color:#ff4444; font-size:0.6em; font-weight:bold; vertical-align: super; margin-left: 2px;">NEW</span>`;
-    const headerTitle = `${TEXT.PANEL_TITLE}${newBadge}<span class="pw-header-subtitle">User:${currentName} & Char:${charName}</span>`;
+    const headerTitle = `${TEXT.PANEL_TITLE}<span class="pw-header-subtitle">User:${currentName} & Char:${charName}</span>`;
 
     const chipsDisplay = uiStateCache.templateExpanded ? 'flex' : 'none';
     const chipsIcon = uiStateCache.templateExpanded ? 'fa-angle-up' : 'fa-angle-down';
-
-    const updateUiHtml = `<div id="pw-update-container"><div style="margin-top:10px; opacity:0.6; font-size:0.9em;"><i class="fas fa-spinner fa-spin"></i> 正在检查更新...</div></div>`;
 
     // [Fix 10] Generate Preset Options
     let presetOptionsHtml = `
@@ -2005,7 +1956,6 @@ async function openCreatorPopup() {
             <div class="pw-tab active" data-tab="editor">人设</div>
             <div class="pw-tab" data-tab="context">参考</div> 
             <div class="pw-tab" data-tab="api">API</div>
-            <div class="pw-tab" data-tab="system">系统</div>
             <div class="pw-tab" data-tab="history">记录</div>
         </div>
     </div>
@@ -2294,121 +2244,6 @@ async function openCreatorPopup() {
         </div>
     </div>
 
-    <!-- System View -->
-    <div id="pw-view-system" class="pw-view">
-        <div class="pw-scroll-area">
-            
-            <!-- 1. 新版本检查区域 -->
-            <div class="pw-card-section">
-                <div class="pw-row" style="margin-bottom:8px; border-bottom:1px solid var(--SmartThemeBorderColor); padding-bottom:5px;">
-                    <label class="pw-section-label">插件版本</label>
-                    <span style="opacity:0.8; font-family:monospace;">当前: v${CURRENT_VERSION}</span>
-                </div>
-                ${updateUiHtml}
-            </div>
-
-            <!-- Theme Selector -->
-            <div class="pw-card-section">
-                <div class="pw-row">
-                    <label class="pw-section-label">界面主题</label>
-                    <div style="flex:1; display:flex; gap:5px;">
-                        <select id="pw-theme-select" class="pw-input" style="flex:1;">
-                            <option value="style.css" selected>默认 (Native)</option>
-                            <!-- Custom themes will be added here -->
-                        </select>
-                        <button class="pw-btn danger" id="pw-btn-delete-theme" title="删除当前主题" style="padding:6px 10px; display:none;"><i class="fa-solid fa-trash"></i></button>
-                        <input type="file" id="pw-theme-import" accept=".css" style="display:none;">
-                        <button class="pw-btn primary" id="pw-btn-import-theme" title="导入本地 .css 文件" style="padding:6px 10px;"><i class="fa-solid fa-file-import"></i></button>
-                        
-                        <button class="pw-btn primary" id="pw-btn-download-template" title="下载主题模版" style="padding:6px 10px;"><i class="fa-solid fa-download"></i></button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Data Migration -->
-            <div class="pw-card-section">
-                <div class="pw-row" style="margin-bottom:4px;">
-                    <label class="pw-section-label">数据迁移</label>
-                </div>
-                <div style="font-size:0.8em; opacity:0.7; margin-bottom:6px; text-align:left;">勾选要导出/导入的内容</div>
-                <div class="pw-migration-checks" style="display:flex; flex-wrap:wrap; gap:6px 14px; margin-bottom:8px; font-size:0.85em;">
-                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="pw-migrate-opt" value="avatars" checked> 参考图片</label>
-                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="pw-migrate-opt" value="history" checked> 存档记录</label>
-                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="pw-migrate-opt" value="prompts" checked> Prompt</label>
-                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="pw-migrate-opt" value="apiConfig" checked> API配置</label>
-                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="pw-migrate-opt" value="themes" checked> 界面主题</label>
-                </div>
-                <div class="pw-row" style="gap:8px;">
-                    <button class="pw-btn primary" id="pw-btn-export-data" style="flex:1;"><i class="fa-solid fa-file-export"></i> 导出</button>
-                    <button class="pw-btn primary" id="pw-btn-import-data" style="flex:1;"><i class="fa-solid fa-file-import"></i> 导入</button>
-                    <input type="file" id="pw-data-import-file" accept=".json" style="display:none;">
-                </div>
-            </div>
-
-            <!-- 2. Prompt 编辑区域 -->
-            <div class="pw-card-section">
-                <div class="pw-context-header" id="pw-prompt-header">
-                    <span><i class="fa-solid fa-terminal"></i> Prompt 查看与编辑 (User Prompt)</span>
-                    <i class="fa-solid fa-chevron-down arrow"></i>
-                </div>
-                <div id="pw-prompt-container" style="display:none; padding-top:10px;">
-                    <div class="pw-row" style="margin-bottom:8px;">
-                        <label>编辑目标</label>
-                        <select id="pw-prompt-type" class="pw-input" style="flex:1;">
-                            <option value="personaGen">User人设生成/润色</option>
-                            <option value="npcGen">NPC人设生成/润色</option>
-                            <option value="templateGen">User模版生成/润色</option>
-                            <option value="npcTemplateGen">NPC模版生成/润色</option>
-                            <option value="chatInfer">User聊天推断/更新</option>
-                            <option value="npcChatInfer">NPC聊天推断/更新</option>
-                        </select>
-                    </div>
-                    <div class="pw-var-btns">
-                        <div class="pw-var-btn" data-ins="{{user}}"><span>User名</span><span class="code">{{user}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{char}}"><span>Char名</span><span class="code">{{char}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{charInfo}}"><span>角色设定</span><span class="code">{{charInfo}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{greetings}}"><span>开场白</span><span class="code">{{greetings}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{template}}"><span>模版内容</span><span class="code">{{template}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{input}}"><span>用户要求</span><span class="code">{{input}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{targetName}}"><span>目标名</span><span class="code">{{targetName}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{userPersona}}"><span>User设定</span><span class="code">{{userPersona}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{chatHistory}}"><span>聊天记录</span><span class="code">{{chatHistory}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{currentText}}"><span>已有人设</span><span class="code">{{currentText}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{currentTemplate}}"><span>当前模版</span><span class="code">{{currentTemplate}}</span></div>
-                        <div class="pw-var-btn" data-ins="{{userRequirements}}"><span>模版需求</span><span class="code">{{userRequirements}}</span></div>
-                    </div>
-                    <textarea id="pw-prompt-editor" class="pw-textarea pw-auto-height" style="min-height:150px; font-size:0.85em;"></textarea>
-                    
-                    <div style="text-align:right; margin-top:10px; display:flex; gap:10px; justify-content:flex-end; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px;">
-                        <div id="pw-toggle-debug-btn" class="pw-toggle-switch" style="margin-right:auto;"><i class="fa-solid fa-bug"></i> Debug</div>
-                        
-                        <button class="pw-mini-btn" id="pw-reset-prompt" style="font-size:0.8em;">恢复默认</button>
-                        <button id="pw-api-save" class="pw-btn primary" style="width:auto; padding: 5px 20px;">保存 Prompt</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3. Debug 预览区域 -->
-            <div id="pw-debug-wrapper" class="pw-card-section" style="display:none; margin-top: 10px; border-top: 1px solid var(--SmartThemeBorderColor); padding-top: 10px;">
-                <div style="margin-bottom: 5px;">
-                    <label style="color: var(--SmartThemeQuoteColor); font-weight:bold;"><i class="fa-solid fa-bug"></i> 实时发送内容预览 (Debug)</label>
-                </div>
-                <div style="font-size: 0.8em; opacity: 0.7; margin-bottom: 5px;">点击“生成设定”后，下方将显示实际发给 AI 的完整内容。</div>
-                <textarea id="pw-debug-preview" class="pw-textarea" readonly style="
-                    min-height: 250px; 
-                    font-family: 'Consolas', 'Monaco', monospace; 
-                    font-size: 12px; 
-                    white-space: pre-wrap; 
-                    background: var(--SmartThemeInputBg); 
-                    color: var(--SmartThemeBodyColor); 
-                    border: 1px solid var(--SmartThemeBorderColor);
-                    width: 100%;
-                " placeholder="等待生成..."></textarea>
-            </div>
-
-        </div>
-    </div>
-
     <!-- History View with Pagination -->
     <div id="pw-view-history" class="pw-view">
         <div class="pw-scroll-area">
@@ -2449,50 +2284,16 @@ async function openCreatorPopup() {
 
     callPopup(html, 'text', '', { wide: true, large: true, okButton: "Close" });
 
-    updatePromise.then(updateInfo => {
-        hasNewVersion = !!updateInfo;
-        const $container = $('#pw-update-container');
-        const $badge = $('#pw-new-badge');
-
-        if (hasNewVersion) {
-            $badge.show(); 
-            const html = `
-                <div id="pw-new-version-box" style="margin-top:10px; padding:15px; background:rgba(0,0,0,0.2); border: 1px solid var(--SmartThemeQuoteColor); border-radius: 6px;">
-                    <div style="font-weight:bold; color:var(--SmartThemeQuoteColor); margin-bottom:8px;">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> 发现新版本: v${updateInfo.version}
-                    </div>
-                    <div id="pw-update-notes" style="font-size:0.9em; margin-bottom:10px; white-space: pre-wrap; color: var(--SmartThemeBodyColor); opacity: 0.9;">${updateInfo.notes || "无更新说明"}</div>
-                    <button id="pw-btn-update" class="pw-btn primary" style="width:100%;">立即更新</button>
-                </div>`;
-            $container.html(html);
-        } else {
-            $container.html(`<div style="margin-top:10px; opacity:0.6; font-size:0.9em;"><i class="fa-solid fa-check"></i> 当前已是最新版本</div>`);
-        }
-    });
-
-    $('#pw-prompt-editor').val(promptsCache.personaGen);
     renderTemplateChips();
     loadAvailableWorldBooks().then(() => {
         renderWiBooks();
         const options = availableWorldBooks.length > 0 ? availableWorldBooks.map(b => `<option value="${b}">${b}</option>`).join('') : `<option disabled>未找到世界书</option>`;
         $('#pw-wi-select').html(`<option value="">-- 添加参考/目标世界书 --</option>${options}`);
     });
-    
+
     renderGreetingsList();
-    autoBindGreetings(); 
-    renderThemeOptions(); 
+    autoBindGreetings();
     renderApiProfiles();
-    
-const savedTheme = uiStateCache.theme || 'style.css';
-    if (savedTheme === 'style.css' || savedTheme === 'Cozy_Fox.css') {
-        loadThemeCSS(savedTheme);
-        $('#pw-theme-select').val(savedTheme);
-        $('#pw-btn-delete-theme').hide();
-    } else if (customThemes[savedTheme]) {
-        applyCustomTheme(customThemes[savedTheme]);
-        $('#pw-theme-select').val(savedTheme);
-        $('#pw-btn-delete-theme').show();
-    }
 
     $('.pw-auto-height').each(function() {
         this.style.height = 'auto';
@@ -2797,28 +2598,6 @@ function bindEvents() {
         renderAvatarStrip();
     });
 
-    // --- Header Toggles (Prompt) ---
-    $(document).on('click.pw', '#pw-prompt-header', function() {
-        const $body = $('#pw-prompt-container');
-        const $arrow = $(this).find('.arrow');
-        if ($body.is(':visible')) { $body.slideUp(); $arrow.removeClass('fa-flip-vertical'); }
-        else { $body.slideDown(); $arrow.addClass('fa-flip-vertical'); }
-    });
-
-    // --- Debug Toggle Button Logic ---
-    $(document).on('click.pw', '#pw-toggle-debug-btn', function() {
-        const $wrapper = $('#pw-debug-wrapper');
-        const $btn = $(this);
-        $wrapper.slideToggle(200, function() {
-            if ($wrapper.is(':visible')) { $btn.addClass('active'); } else { $btn.removeClass('active'); }
-        });
-    });
-
-    // --- NEW 标记点击跳转 ---
-    $(document).on('click.pw', '#pw-new-badge', function() {
-        $('.pw-tab[data-tab="system"]').click();
-    });
-
     // [Fix 10] Preset Select Change Logic
     $(document).on('change.pw', '#pw-preset-select', function() {
         const val = $(this).val();
@@ -2826,177 +2605,6 @@ function bindEvents() {
         saveData();
         // [Fix 14] Update Hint on Change
         $('#pw-preset-hint').text(getPresetHintText(val));
-    });
-
-    // --- Prompt Editor Type Switch ---
-    $(document).on('change.pw', '#pw-prompt-type', function() {
-        const type = $(this).val();
-        if (promptsCache[type]) { $('#pw-prompt-editor').val(promptsCache[type]); }
-        else { $('#pw-prompt-editor').val(promptsCache.personaGen); }
-    });
-
-    // --- Update Button Logic ---
-    $(document).on('click.pw', '#pw-btn-update', function() {
-        if (!window.TavernHelper || !window.TavernHelper.updateExtension) {
-            toastr.error("TavernHelper 未加载，无法自动更新，请手动更新。");
-            return;
-        }
-        toastr.info("正在更新...");
-        window.TavernHelper.updateExtension(extensionName).then(res => {
-            if (res.ok) {
-                toastr.success("更新成功！正在刷新页面...");
-                setTimeout(() => window.location.reload(), 1500);
-            } else {
-                toastr.error("更新失败，请查看控制台。");
-            }
-        });
-    });
-
-    // --- Theme Import Logic ---
-    $(document).on('click.pw', '#pw-btn-import-theme', () => $('#pw-theme-import').click());
-    $(document).on('change.pw', '#pw-theme-import', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const cssContent = e.target.result;
-            const themeName = file.name;
-            customThemes[themeName] = cssContent;
-            saveData();
-            renderThemeOptions();
-            $('#pw-theme-select').val(themeName).trigger('change');
-            toastr.success(`已导入主题: ${themeName}`);
-        };
-        reader.readAsText(file);
-        $(this).val('');
-    });
-
-    $(document).on('click.pw', '#pw-btn-delete-theme', function() {
-        const current = $('#pw-theme-select').val();
-        if (current === 'style.css') return; 
-        if (confirm(`确定要删除主题 "${current}" 吗？`)) {
-            delete customThemes[current];
-            saveData();
-            uiStateCache.theme = 'style.css';
-            saveData();
-            loadThemeCSS('style.css');
-            renderThemeOptions();
-            $('#pw-theme-select').val('style.css');
-            toastr.success("主题已删除");
-        }
-    });
-
-    $(document).on('click.pw', '#pw-btn-download-template', async function() {
-        const currentThemeName = $('#pw-theme-select').val();
-        let cssContent = "";
-        let fileName = currentThemeName;
-        if (currentThemeName === 'style.css') {
-            try {
-                const res = await fetch(`scripts/extensions/third-party/${extensionName}/style.css?v=${CURRENT_VERSION}`);
-                if (!res.ok) throw new Error("Fetch failed");
-                cssContent = await res.text();
-            } catch (e) {
-                cssContent = `/* Native Style v${CURRENT_VERSION} */\n.pw-wrapper { --pw-text-main: var(--smart-theme-body-color); ... }`;
-            }
-        } else { cssContent = customThemes[currentThemeName]; }
-        if (!cssContent) return toastr.error("无法获取主题内容");
-        const blob = new Blob([cssContent], { type: "text/css" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = fileName;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    });
-
-    // --- Data Migration: helpers ---
-    function getCheckedMigrateOpts() {
-        const opts = {};
-        $('.pw-migrate-opt').each(function() { opts[$(this).val()] = $(this).is(':checked'); });
-        return opts;
-    }
-
-    // --- Data Migration: Export ---
-    $(document).on('click.pw', '#pw-btn-export-data', function() {
-        try {
-            const sel = getCheckedMigrateOpts();
-            if (!Object.values(sel).some(v => v)) { toastr.warning('请至少勾选一项'); return; }
-            const exportData = { _pw_export: true, version: CURRENT_VERSION, exportedAt: new Date().toISOString() };
-            const parts = [];
-            if (sel.avatars)  { exportData.avatars = avatarImagesCache || []; parts.push(`${exportData.avatars.length} 头像`); }
-            if (sel.history)  { exportData.history = historyCache || []; parts.push(`${exportData.history.length} 存档`); }
-            if (sel.prompts)  { try { exportData.prompts = JSON.parse(localStorage.getItem(STORAGE_KEY_PROMPTS)); } catch {} parts.push('Prompt'); }
-            if (sel.themes)   { exportData.themes = customThemes || {}; parts.push('主题'); }
-            const blob = new Blob([JSON.stringify(exportData)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `persona_weaver_backup_${new Date().toISOString().slice(0,10)}.json`;
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            toastr.success(`已导出: ${parts.join(', ')}`);
-        } catch (e) {
-            console.error('[PW] Export failed:', e);
-            toastr.error('导出失败: ' + e.message);
-        }
-    });
-
-    // --- Data Migration: Import ---
-    $(document).on('click.pw', '#pw-btn-import-data', () => $('#pw-data-import-file').click());
-    $(document).on('change.pw', '#pw-data-import-file', function() {
-        const file = this.files?.[0];
-        if (!file) return;
-        const sel = getCheckedMigrateOpts();
-        if (!Object.values(sel).some(v => v)) { toastr.warning('请至少勾选一项'); return; }
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            try {
-                const data = JSON.parse(ev.target.result);
-                if (!data._pw_export) { toastr.error('无效的备份文件'); return; }
-                const parts = [];
-                if (sel.avatars && data.avatars?.length) {
-                    avatarImagesCache = data.avatars;
-                    saveAvatarImages();
-                    parts.push(`${data.avatars.length} 头像`);
-                }
-                if (sel.history && data.history?.length) {
-                    historyCache = data.history;
-                    safeLocalStorageSet(STORAGE_KEY_HISTORY, JSON.stringify(historyCache));
-                    parts.push(`${data.history.length} 存档`);
-                }
-                if (sel.prompts && data.prompts) {
-                    safeLocalStorageSet(STORAGE_KEY_PROMPTS, JSON.stringify(data.prompts));
-                    parts.push('Prompt');
-                }
-                if (sel.themes && data.themes && Object.keys(data.themes).length) {
-                    Object.assign(customThemes, data.themes);
-                    safeLocalStorageSet(STORAGE_KEY_THEMES, JSON.stringify(customThemes));
-                    parts.push('主题');
-                }
-                if (parts.length === 0) { toastr.info('备份中无匹配的勾选内容'); return; }
-                toastr.success(`已导入: ${parts.join(', ')}`);
-                renderAvatarMgmt();
-                renderAvatarStrip();
-                renderHistoryList();
-            } catch (e) {
-                console.error('[PW] Import failed:', e);
-                toastr.error('导入失败: ' + e.message);
-            }
-        };
-        reader.readAsText(file);
-        $(this).val('');
-    });
-
-    $(document).on('change.pw', '#pw-theme-select', function() {
-        const theme = $(this).val();
-        uiStateCache.theme = theme;
-        saveData();
-        if (theme === 'style.css' || theme === 'Cozy_Fox.css') {
-            loadThemeCSS(theme);
-            $('#pw-btn-delete-theme').hide();
-        } else if (customThemes[theme]) {
-            applyCustomTheme(customThemes[theme]);
-            $('#pw-btn-delete-theme').show();
-        }
     });
 
     $(document).on('click.pw', '#pw-hist-prev', () => { if (historyPage > 1) { historyPage--; renderHistoryList(); } });
@@ -3253,20 +2861,6 @@ function bindEvents() {
         el.value = val.substring(0, start) + insertText + val.substring(end);
         el.selectionStart = el.selectionEnd = start + insertText.length;
         el.focus();
-    });
-
-    $(document).on('click.pw', '.pw-var-btn', function () {
-        const ins = $(this).data('ins');
-        const $activeText = $(this).parent().next('textarea');
-        if ($activeText.length) {
-            const el = $activeText[0];
-            const start = el.selectionStart;
-            const end = el.selectionEnd;
-            const val = el.value;
-            el.value = val.substring(0, start) + ins + val.substring(end);
-            el.selectionStart = el.selectionEnd = start + ins.length;
-            el.focus();
-        }
     });
 
     let selectionTimeout;
@@ -3905,31 +3499,6 @@ function bindEvents() {
         finally { $btn.html('<i class="fa-solid fa-plug"></i>'); }
     });
 
-    $(document).on('click.pw', '#pw-api-save', () => {
-        const type = $('#pw-prompt-type').val();
-        promptsCache[type] = $('#pw-prompt-editor').val();
-        saveData();
-        toastr.success("Prompt已保存");
-    });
-
-    $(document).on('click.pw', '#pw-reset-prompt', () => {
-        if (!confirm("确定恢复默认 Prompt？")) return;
-        const type = $('#pw-prompt-type').val();
-        const defaults = {
-            templateGen: defaultTemplateGenPrompt,
-            npcTemplateGen: defaultNpcTemplateGenPrompt,
-            templateRefine: defaultTemplateRefinePrompt,
-            npcTemplateRefine: defaultNpcTemplateRefinePrompt,
-            personaGen: defaultPersonaGenPrompt,
-            npcGen: defaultNpcGenPrompt
-        };
-        if (defaults[type]) {
-            $('#pw-prompt-editor').val(defaults[type]);
-            promptsCache[type] = defaults[type];
-            saveData();
-        }
-    });
-
     $(document).on('click.pw', '#pw-wi-add', () => { const val = $('#pw-wi-select').val(); if (val && !window.pwExtraBooks.includes(val)) { window.pwExtraBooks.push(val); renderWiBooks(); } });
 
     // === Chat History Reference Events ===
@@ -4252,46 +3821,6 @@ function bindEvents() {
     $(document).on('click.pw', '#pw-history-clear-all', function () { if (confirm("清空?")) { historyCache = []; saveData(); renderHistoryList(); } });
 }
 
-// 动态加载外部 CSS 文件 (用于 style.css)
-function loadThemeCSS(fileName) {
-    // [Fix 5] Clear custom style when loading file
-    $('#pw-custom-style').remove();
-
-    const versionQuery = `?v=${CURRENT_VERSION}`; 
-    const href = `scripts/extensions/third-party/${extensionName}/${fileName}${versionQuery}`;
-
-    if ($('#pw-style-link').length) {
-        $('#pw-style-link').attr('href', href);
-    } else {
-        $('<link>')
-            .attr('rel', 'stylesheet')
-            .attr('type', 'text/css')
-            .attr('href', href)
-            .attr('id', 'pw-style-link')
-            .appendTo('head');
-    }
-}
-
-// 应用自定义 CSS 内容 (用于导入的主题)
-function applyCustomTheme(cssContent) {
-    // [Fix 5] Clear file link when loading custom
-    $('#pw-style-link').remove(); 
-    
-    if ($('#pw-custom-style').length) $('#pw-custom-style').remove();
-    $('<style id="pw-custom-style">').text(cssContent).appendTo('head');
-}
-
-function renderThemeOptions() {
-    const $select = $('#pw-theme-select').empty();
-    $select.append('<option value="style.css">默认 (Native)</option>');
-    $select.append('<option value="Cozy_Fox.css">小狐狸</option>');
-    
-    Object.keys(customThemes).forEach(name => {
-        if (name !== 'style.css' && name !== 'Cozy_Fox.css') {
-            $select.append(`<option value="${name}">${name}</option>`);
-        }
-    });
-}
 const renderTemplateChips = () => {
     const $container = $('#pw-template-chips').empty();
     const blocks = parseYamlToBlocks(getCurrentTemplate());
@@ -4812,6 +4341,5 @@ function addPersonaButton() {
 jQuery(async () => {
     addPersonaButton(); 
     bindEvents(); 
-    loadThemeCSS('style.css'); // Default theme
-    console.log("[PW] Persona Weaver Loaded (v2.7.2 - Hotfix)");
+    console.log(`[PW] Persona Weaver Loaded (v${CURRENT_VERSION})`);
 });
