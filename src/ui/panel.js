@@ -103,7 +103,7 @@ export async function openCreatorPopup() {
                 </span>
             </div>
 
-            <textarea id="pw-request" class="pw-textarea pw-auto-height" placeholder="在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...">${activeData.request}</textarea>
+            <textarea id="pw-request" class="pw-textarea pw-auto-height" placeholder="额外需求（可选）——想要什么样的角色、要加什么字段…">${activeData.request}</textarea>
             <button id="pw-btn-gen" class="pw-btn gen"><i class="fa-solid ${chatHistEnabled ? 'fa-comments' : 'fa-wand-magic-sparkles'}"></i> ${chatHistEnabled ? '聊天推断生成' : '生成 User 设定'}</button>
 
             <div id="pw-result-area" style="display:${activeData.hasResult ? 'block' : 'none'}; margin-top:15px;">
@@ -321,7 +321,6 @@ export async function openCreatorPopup() {
                     <option value="all">所有类型</option>
                     <option value="user_persona">User人设</option>
                     <option value="npc_persona">NPC人设</option>
-                    <option value="user_template">User模板</option>
                     <option value="npc_template">NPC模板</option>
                 </select>
                 <select id="pw-hist-filter-char" class="pw-input" style="flex:1;">

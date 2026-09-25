@@ -15,17 +15,20 @@ const STORAGE_KEY_UI_STATE = 'pw_ui_state_v4_preset';
 const STORAGE_KEY_DATA_USER = 'pw_data_user_v1'; 
 export const STORAGE_KEY_PINNED_BOOKS = 'pw_pinned_books_v1';
 
-// 已删除特性独占的持久化键（手动模板、外貌参考图）。键名是历史发布过的契约，只能写死于此处做
+// 已删除特性独占的持久化键（手动模板、外貌参考图、NPC 上下文）。键名是历史发布过的契约，只能写死于此处做
 // 存量清理——loadData 时逐次 removeItem，幂等。
-const RETIRED_STORAGE_KEYS = ['pw_template_v6_new_yaml', 'pw_avatar_images_v1'];
+const RETIRED_STORAGE_KEYS = ['pw_template_v6_new_yaml', 'pw_avatar_images_v1', 'pw_data_npc_v1'];
+
+// userContext 的规范形状：curatedSchema 为空＝尚未策展，取用时由 getCurrentSchema() 回退默认模板；
+// 旧形状的 template 字段已淘汰，loadData 按字段重建对象即完成迁移。
+const defaultUserContext = () => ({ request: "", result: "", hasResult: false, curatedSchema: "" });
 
 export const store = {
     historyCache: [],
     promptsCache: {
-        templateGen: DEFAULT_PROMPTS.templateGen,
-        templateRefine: DEFAULT_PROMPTS.templateGen,
         personaGen: DEFAULT_PROMPTS.personaGen,
         chatInfer: DEFAULT_PROMPTS.chatInfer,
+        curator: DEFAULT_PROMPTS.curator,
         initial: FALLBACK_SYSTEM_PROMPT
     },
     availableWorldBooks: [],
@@ -35,12 +38,12 @@ export const store = {
     uiStateCache: { generationPreset: 'current', chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } },
     historyPage: 1,
     lastRefineRequest: "",
-    userContext: { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false },
+    userContext: defaultUserContext(),
     currentDiffBlocks: [],
 };
 
-export const getCurrentTemplate = () => {
-    return store.userContext.template;
+export const getCurrentSchema = () => {
+    return store.userContext.curatedSchema || DEFAULT_TEMPLATES.user;
 }
 
 // ============================================================================
@@ -61,8 +64,6 @@ export function loadData() {
     try { store.historyCache = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY)) || []; } catch { store.historyCache = []; }
     try {
         const p = JSON.parse(localStorage.getItem(STORAGE_KEY_PROMPTS));
-        const migrateTemplatePrompt = (stored, def) =>
-            (stored && stored.includes('{{userRequirements}}')) ? stored : def;
         // v3.4.6 引入的"生命周期/时间线豁免"标识，用于识别旧版默认值
         const V345_PROHIBIT_SIG = 'Do NOT output empty strings, "未知", "unknown", "N/A", "待定", "TBD", "暂无", null, "-", or placeholders.';
         const hasLifecycleExc = (s) => s.includes('LIFECYCLE / TIMELINE EXCEPTION') || s.includes('尚未发生（角色');
@@ -99,19 +100,18 @@ export function loadData() {
             if (looksLikeOldDefault) return def;
             return stored;
         };
+        // 按当前键集合重建缓存对象：存量里的退役键（旧版模板生成提示词）随之自然剥掉，无需逐键删除。
         store.promptsCache = {
-            templateGen: migrateTemplatePrompt(p && p.templateGen, DEFAULT_PROMPTS.templateGen),
-            templateRefine: DEFAULT_PROMPTS.templateGen,
             personaGen: migrateGenPrompt(p && p.personaGen, DEFAULT_PROMPTS.personaGen, '[Task: Generate/Refine User Profile]'),
             chatInfer: migrateChatInferPrompt(p && p.chatInfer, DEFAULT_PROMPTS.chatInfer),
+            curator: (p && p.curator) ? p.curator : DEFAULT_PROMPTS.curator,
             initial: (p && p.initial) ? p.initial : FALLBACK_SYSTEM_PROMPT
         };
     } catch { 
         store.promptsCache = { 
-            templateGen: DEFAULT_PROMPTS.templateGen,
-            templateRefine: DEFAULT_PROMPTS.templateGen,
             personaGen: DEFAULT_PROMPTS.personaGen,
             chatInfer: DEFAULT_PROMPTS.chatInfer,
+            curator: DEFAULT_PROMPTS.curator,
             initial: FALLBACK_SYSTEM_PROMPT 
         }; 
     }
@@ -123,18 +123,24 @@ export function loadData() {
         store.uiStateCache = JSON.parse(localStorage.getItem(STORAGE_KEY_UI_STATE)) || defaultUiState;
         if (!store.uiStateCache.chatHistory) store.uiStateCache.chatHistory = { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] };
     } catch { store.uiStateCache = defaultUiState; }
-    // 清理已删除特性的存量字段（模板编辑器 / 外貌参考图）与主题系统遗留（theme 字段已无任何消费者）
+    // 清理已删除特性的存量字段（模板编辑器 / 外貌参考图 / NPC 模式切换）与主题系统遗留（theme 字段已无任何消费者）
     delete store.uiStateCache.templateExpanded;
     delete store.uiStateCache.avatarRef;
+    delete store.uiStateCache.generationMode;
     delete store.uiStateCache.theme;
     localStorage.removeItem('pw_custom_themes_v1');
     RETIRED_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
 
-    // Load Isolated Context Data
+    // Load Isolated Context Data（逐字段重建：旧形状的 template 被丢弃，缺字段补默认，反复加载幂等）
     try {
         const u = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA_USER));
-        store.userContext = u || { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false };
-    } catch { store.userContext = { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false }; }
+        store.userContext = {
+            request: (u && u.request) || "",
+            result: (u && u.result) || "",
+            hasResult: !!(u && u.hasResult),
+            curatedSchema: (u && typeof u.curatedSchema === 'string') ? u.curatedSchema : ""
+        };
+    } catch { store.userContext = defaultUserContext(); }
 }
 
 export function saveData() {

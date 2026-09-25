@@ -74,10 +74,11 @@ export const renderHistoryList = () => {
         
         // Accurate Type Filtering
         const type = item.data.genType || item.data.type;
+        // 存量模板条目保留在 localStorage 但不展示（仅跳过渲染，不删数据）
+        if (type === 'template' || type === 'user_template') return false;
         if (filterType !== 'all') {
             if (filterType === 'user_persona' && type !== 'user_persona' && type !== 'persona') return false;
             if (filterType === 'npc_persona' && type !== 'npc_persona' && type !== 'npc') return false;
-            if (filterType === 'user_template' && type !== 'user_template' && type !== 'template') return false;
             if (filterType === 'npc_template' && type !== 'npc_template') return false;
         }
 
@@ -110,8 +111,6 @@ export const renderHistoryList = () => {
         let badgeHtml = '';
         if (type === 'npc_template') {
             badgeHtml = '<span class="pw-badge template" style="background:rgba(255, 165, 0, 0.2); color:#ffbc42;">模版(N)</span>';
-        } else if (type === 'user_template' || type === 'template') {
-            badgeHtml = '<span class="pw-badge template">模版(U)</span>';
         } else if (type === 'npc_persona' || type === 'npc') {
             badgeHtml = '<span class="pw-badge npc" style="background:rgba(155, 89, 182, 0.2); color:#a569bd; border:1px solid rgba(155, 89, 182, 0.4);">NPC</span>';
         } else {

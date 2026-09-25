@@ -6,7 +6,7 @@ SillyTavern 原生扩展插件。旨在利用 AI 智能生成、深度润色和�
 
 ## ✨ 核心功能
 
-*   **AI 智能生成**：根据简单的自然语言描述（或内置 YAML 模版），自动生成结构化、高质量的用户人设。
+*   **AI 智能生成**：根据可选的自然语言需求，AI 先按世界书策展个性化 YAML 结构，再生成结构化、高质量的用户人设。
 *   **深度润色 & 智能对比**：
     *   对现有设定不满意？输入修改意见，AI 智能重写。
     *   提供 **Diff (差异对比)** 视图，直观展示修改前后的变化，支持选择性保留或直接编辑。
@@ -39,7 +39,7 @@ SillyTavern 原生扩展插件。旨在利用 AI 智能生成、深度润色和�
 
 ### ✨ Features
 
-*   **AI Generation**: Automatically generate detailed, structured User Personas (YAML) based on simple prompts or templates.
+*   **AI Generation**: Automatically generate detailed, structured User Personas (YAML) with an AI-curated schema, from optional natural-language requirements.
 *   **Smart Refinement & Diff View**: 
     *   Refine your persona with natural language instructions.
     *   **Smart Contrast**: Visually compare the original vs. refined text side-by-side, allowing you to selectively apply changes or edit directly.

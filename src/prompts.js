@@ -1,6 +1,6 @@
 // 默认提示词与模版的单一事实源（纯数据模块，无依赖）。
-// 注册表键与 store.promptsCache 的任务键对应；模版正文中的 {{currentTemplate}} 等占位符
-// 是与 localStorage 存量数据的持久化契约，禁止改名或改写正文。
+// 注册表键与 store.promptsCache 的任务键对应；正文里的占位符由 generation.js 组装替换，
+// 键名与占位符一经发布即持久化契约，禁止改名或改写正文。
 
 export const DEFAULT_TEMPLATES = {
     // 默认 User 模版 (主模版)
@@ -77,34 +77,33 @@ NSFW:
 };
 
 export const DEFAULT_PROMPTS = {
-    // User 模版生成专用 Prompt
-    templateGen:
-`[TASK: DESIGN_OR_REFINE_USER_PROFILE_SCHEMA]
-[CONTEXT: The user is entering a simulation world defined by the database provided in System Context.]
-[GOAL: Create or refine a comprehensive YAML template (Schema Only) for the **User Avatar (Protagonist)**.]
+    // 策展 Prompt：只产出 schema 结构（键），不填值。世界书经独立 system 消息注入；
+    // {{userRequirements}} 由调用方替换，无额外需求时为空串。
+    curator:
+`[TASK: CURATE_PROFILE_SCHEMA]
+[CONTEXT: You are designing a YAML profile schema (keys only, values empty) for the reader's own character (the User Avatar) in this simulation world. The profile will be read ALONGSIDE the World Setting database provided in this conversation — readers always see both documents together.]
 
-{{currentTemplate}}
+<source_materials>
+{{charInfo}}
+</source_materials>
 
 {{userRequirements}}
 
-<requirements>
-1. Language: **Simplified Chinese (简体中文)** keys.
-2. Structure: YAML keys only. Leave values empty.
-3. **World Consistency**: The fields MUST reflect the specific logic of the provided World Setting.
-   - If the world is Xianxia, include keys like "根骨", "境界", "灵根".
-   - If the world is ABO, include "第二性别", "信息素气味".
-   - If the world is Modern, use standard sociological attributes.
-4. Scope: Biological, Sociological, Psychological, Special Abilities.
-5. Detail Level: High. This is for the main character.
-6. If user has provided specific requirements, prioritize fulfilling them.
-7. If an existing template is provided above, modify it according to the user's request. Preserve fields the user did not mention unless explicitly asked to restructure.
-8. If no existing template is provided, create a new one from scratch.
-</requirements>
+[PRINCIPLES — apply in order]:
+1. COMPLEMENT, NEVER DUPLICATE: The World Setting is already known to the reader. FORBID any field whose content would merely restate what the World Setting already states (world rules, lore, geography, factions, other characters' backgrounds). A field is allowed only if it captures something SPECIFIC TO THIS CHARACTER that the World Setting does not provide.
+2. WORLD-FLAVORED KEYS: Where the world defines mechanics relevant to this character (e.g. cultivation realms, second gender, cybernetics), add keys in that world's vocabulary — one key per mechanic that matters for roleplay, no more.
+3. SCALE TO THE SOURCE: World Settings vary widely. Some provide rich, specific hooks for this character's place in the world; others are broad lore with little personal connection. Match the schema's breadth to what the setting actually gives: rich hooks → a fuller schema; broad or thin → stay lean and identity-focused (who they are, how they present, what they carry into the world). Never pad with fields the setting cannot inform.
+4. LEAN BY DEFAULT: Start from the base blocks below and ADD only what this world and the user's requirements justify. Fewer, sharper fields beat exhaustive forms. Never exceed 10 top-level blocks.
+5. PROTAGONIST FOCUS: This is the reader's own character — identity, personality, appearance, and their connection to this world matter most; social blocks stay light.
 
-[Constraint]: Do NOT include any "Little Theater", scene descriptions, or values. STRICTLY YAML KEYS ONLY.
+<base_blocks>
+基本信息 / 外貌 / 性格 / 背景 / 喜恶 / NSFW
+</base_blocks>
+
+[Constraint]: YAML keys only, values empty, Simplified Chinese keys. No explanations. Output a single \`\`\`yaml block.
 
 [Action]:
-Output the YAML template now. No explanations.`,
+Output the curated YAML schema now.`,
     // User 人设生成/润色 Prompt
     personaGen:
 `[Task: Generate/Refine User Profile]
@@ -123,11 +122,14 @@ Output the YAML template now. No explanations.`,
 
 [Requirements]:
 1. Follow the YAML schema exactly. Output every leaf field defined in the schema.
-2. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from source materials or the user's request, generate the most reasonable value consistent with the persona, context, and worldview — but do NOT contradict existing evidence.
-3. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the character has NOT YET reached or experienced (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; a future plot beat that has not happened in the established narrative). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. The reason MUST be contextual — bare "未知" / "N/A" / "TBD" without explanation is still forbidden.
-4. REFINE / PATCH MODE — If a Target Buffer (existing profile) is provided in the input, treat it as the baseline. PRESERVE every field not explicitly affected by the user's patch instruction. Do NOT clear, blank, shorten, or replace untouched fields with placeholders. Only modify the fields targeted by the patch (and any directly implied by it). Any field that was previously blank MUST now be filled (subject to rules 2 and 3).
+2. COMPLEMENT, DON'T RESTATE — The World Setting database is displayed alongside this profile. NEVER copy or paraphrase world lore into field values. When a field relates to an established world fact, answer with THIS character's specific take in one short phrase (e.g. this character's particular 灵根, not what 灵根 means in this world).
+3. CONCISE VALUES — Each leaf value is one short phrase or sentence (≤20 Chinese characters), unless the block is explicitly narrative (e.g. 背景故事). No filler, no padding, no restating the field name.
+4. SPECIFIC OVER GENERIC — Prefer bold, concrete, playable details (a named habit, a visible tell, a stated preference) over safe abstract traits.
+5. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from source materials or the user's request, generate the most reasonable value consistent with the persona, context, and worldview — but do NOT contradict existing evidence.
+6. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the character has NOT YET reached or experienced (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; a future plot beat that has not happened in the established narrative). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. The reason MUST be contextual — bare "未知" / "N/A" / "TBD" without explanation is still forbidden.
+7. REFINE / PATCH MODE — If a Target Buffer (existing profile) is provided in the input, treat it as the baseline. PRESERVE every field not explicitly affected by the user's patch instruction. Do NOT clear, blank, shorten, or replace untouched fields with placeholders. Only modify the fields targeted by the patch (and any directly implied by it). Any field that was previously blank MUST now be filled (subject to rules 5 and 6).
 
-[Constraint]: Do NOT include any "Little Theater", "Small Theater", scene descriptions, internal monologues, or CoT status bars. STRICTLY YAML DATA ONLY. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 3). Before finishing, silently re-check the output and fill in any field that is still blank.
+[Constraint]: Do NOT include any "Little Theater", "Small Theater", scene descriptions, internal monologues, or CoT status bars. STRICTLY YAML DATA ONLY. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 6). Before finishing, silently re-check the output and fill in any field that is still blank. Values stay concise per rule 3; no value may restate World Setting content.
 
 [Action]:
 Output ONLY the YAML data matching the schema, with every field populated.`,
@@ -157,12 +159,13 @@ Output ONLY the YAML data matching the schema, with every field populated.`,
 2. Extract personality traits, speech patterns, values, habits, relationships, and other characteristics revealed through dialogue.
 3. Priority of information sources:
    (a) Direct evidence from the chat history and source materials.
-   (c) Reasonable, context-consistent inference derived from tone, worldview, relationships, and common sense.
-4. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field in the target schema with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from chat/images, generate the most reasonable value consistent with the observed personality, context, and worldview — but do NOT contradict existing evidence.
+   (b) Reasonable, context-consistent inference derived from tone, worldview, relationships, and common sense.
+4. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field in the target schema with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from chat, generate the most reasonable value consistent with the observed personality, context, and worldview — but do NOT contradict existing evidence.
 5. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the user character has NOT YET reached or experienced in the chat history / source materials (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; an event scheduled for later in the story). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. Bare "未知" / "N/A" / "TBD" without a contextual reason is still forbidden.
 6. If an existing profile is provided above, PRESERVE content still consistent with the chat, ADD newly revealed traits, UPDATE evolved traits, and ENRICH with observed patterns. Any field that was previously blank MUST now be filled (subject to rules 4 and 5).
 7. If no existing profile is provided, create a complete new profile from scratch.
-9. Pay special attention to: tone of voice, emotional reactions, decision-making patterns, relationship dynamics, recurring themes.
+8. Pay special attention to: tone of voice, emotional reactions, decision-making patterns, relationship dynamics, recurring themes.
+9. CONCISE VALUES — Each leaf value is one short phrase or sentence (≤20 Chinese characters) unless the block is explicitly narrative.
 
 [Constraint]: STRICTLY YAML DATA ONLY. No explanations, no scene descriptions. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 5). Before finishing, silently re-check the output and fill in any field that is still blank.
 

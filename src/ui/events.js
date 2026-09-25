@@ -472,12 +472,8 @@ export function bindEvents() {
 
         const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
         console.log(`[PW] Gen Clicked (chatInfer=${chatInferOn})`);
+        // 需求已改为可选（额外需求）：空需求＋聊天推断关闭＝纯全自动链，由 curator 按世界书自行策展
         const req = $('#pw-request').val();
-        if (!req && !chatInferOn) {
-            toastr.warning("请输入要求");
-            store.isProcessing = false;
-            return;
-        }
         const $btn = $(this);
         $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 生成中...');
         
@@ -489,11 +485,10 @@ export function bindEvents() {
         try {
             const contextData = await collectContextData();
             const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const existingResult = chatInferOn ? ($('#pw-result-text').data('prev-result') || '') : '';
             const config = {
                 mode: 'initial', 
                 request: req || '',
-                currentText: existingResult,
+                currentText: '',
                 wiText: contextData.wi,
                 greetingsText: contextData.greetings,
                 apiSource: $('#pw-api-source').val(), 

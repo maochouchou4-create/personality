@@ -1,10 +1,12 @@
 // 一次人设生成的完整域：上下文收集 → 提示词组装 → 调传输层 → 结果后处理。
-// 提示词内容重写是后续批的主战场，本文件只承载组装与调用链。
-import { store, loadData, getCurrentTemplate } from "./state.js";
+// 生成链：首次生成固定两段（curator 策展 schema → personaGen 按 schema 填充）；refine 与聊天推断各单段。
+// 提示词正文在 prompts.js，本文件只承载组装与调用链。
+import { store, loadData, saveData, getCurrentSchema } from "./state.js";
 import { getCharacterInfoText, fetchChatHistoryFiltered, getActivePersonaDescription } from "./st-data.js";
 import { getContextWorldBooks, loadWiSelection, getWorldBookEntries } from "./world-info.js";
 import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse } from "./api.js";
-import { DEFAULT_PROMPTS, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
+import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
+import { parseYamlToBlocks } from "./yaml.js";
 
 export const yieldToBrowser = () => new Promise(resolve => requestAnimationFrame(resolve));
 
@@ -16,6 +18,34 @@ export function wrapAsXiTaReference(content, title) {
 ${content}
 """`;
 }
+
+// 剥掉模型输出外层的 ``` 围栏。prefill 被续写但模型未闭合围栏时，按首行形态补回结构头再剥。
+function stripYamlFence(rawText, prefillContent) {
+    const yamlRegex = /```(?:yaml)?\n([\s\S]*?)```/i;
+    const match = rawText.match(yamlRegex);
+    if (match && match[1]) return match[1].trim();
+
+    let text = rawText;
+    if (prefillContent && !text.startsWith(prefillContent) && !text.startsWith("```yaml")) {
+        const trimRes = text.trim();
+        if (!trimRes.startsWith("```yaml") && (trimRes.startsWith("姓名") || trimRes.startsWith("  姓名") || trimRes.startsWith("基本信息"))) {
+            text = prefillContent + text;
+        }
+    }
+    return text.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
+}
+
+// 策展输出的可解析性判定：至少要能切出一个顶层键，否则视为不可解析（调用方回退默认模板）。
+const isParsableSchema = (schema) => parseYamlToBlocks(schema).size > 0;
+
+// refine 的 PATCH 块里已含完整 Target Buffer，去掉 personaGen 正文的 <target_schema> 空壳避免结构重复注入。
+const stripTargetSchemaBlock = (prompt) => prompt.replace(/<target_schema>[\s\S]*?<\/target_schema>\s*/i, '');
+
+// 两段链的进度文案直写生成按钮：段边界只存在于 runGeneration 内，按钮终态由调用方 finally 恢复。
+const setGenProgress = (label) => {
+    const $btn = $('#pw-btn-gen');
+    if ($btn.length) $btn.html(`<i class="fas fa-spinner fa-spin"></i> ${label}`);
+};
 
 export async function collectContextData() {
     let wiContent = [];
@@ -174,125 +204,11 @@ export function getPresetHintText(val) {
 // ============================================================================
 // [核心] 生成逻辑
 // ============================================================================
-export async function runGeneration(data, apiConfig, isTemplateMode = false) {
-    let charName = "Char";
-    if (window.TavernHelper && window.TavernHelper.getCharData) {
-        const cData = window.TavernHelper.getCharData('current');
-        if (cData) charName = cData.name;
-    }
-    const currentName = $('.persona_name').first().text().trim() || 
-                        $('h5#your_name').text().trim() || "User";
 
-    if (!store.promptsCache || !store.promptsCache.personaGen) loadData(); 
-
-    const rawCharInfo = getCharacterInfoText(); 
-    const rawWi = data.wiText || ""; 
-    const rawGreetings = data.greetingsText || "";
-    const currentText = data.currentText || "";
-    const requestText = data.request || "";
-    
-    const chatHistConf = store.uiStateCache.chatHistory || {};
-    const chatInferEnabled = chatHistConf.enabled && !isTemplateMode;
-
-    let rawUserPersona = "";
-    let rawChatHistory = "";
-    if (chatInferEnabled) {
-        const filteredResult = await fetchChatHistoryFiltered();
-        rawChatHistory = filteredResult.text;
-        rawUserPersona = getActivePersonaDescription();
-    }
-
-    const wrappedCharInfo = wrapAsXiTaReference(rawCharInfo, `Entity Profile: ${charName}`);
-    const wrappedWi = wrapAsXiTaReference(rawWi, "Global State Variables"); 
-    const wrappedGreetings = wrapAsXiTaReference(rawGreetings, "Init Sequence");
-    const wrappedTags = wrapAsXiTaReference(getCurrentTemplate(), "Schema Definition");
-    const wrappedInput = wrapInputForSafety(requestText, currentText, data.mode === 'refine');
-    
-    const wrappedUserPersona = chatInferEnabled ? wrapAsXiTaReference(rawUserPersona, `User Profile: ${currentName}`) : "";
-    const wrappedChatHistory = chatInferEnabled ? wrapAsXiTaReference(rawChatHistory, `Chat History Reference`) : "";
-
-    // [Fix 10] Use selected preset logic
-    let activeSystemPrompt = getRealSystemPrompt(store.uiStateCache.generationPreset);
-
-    if (!activeSystemPrompt && store.uiStateCache.generationPreset !== 'pure') {
-        activeSystemPrompt = FALLBACK_SYSTEM_PROMPT.replace(/{{user}}/g, currentName);
-    } else if (activeSystemPrompt) {
-        // [Fix 9] Prevent WI duplication by stripping macros from fetched system prompt
-        activeSystemPrompt = activeSystemPrompt
-            .replace(/{{user}}/g, currentName)
-            .replace(/{{char}}/g, charName)
-            .replace(/{{world_info}}/gi, '')
-            .replace(/{{wInfo}}/gi, '')
-            .replace(/{{worldInfo}}/gi, '');
-    } else {
-        // Pure mode returns empty string
-        activeSystemPrompt = ""; 
-    }
-
-    let userMessageContent = "";
-    let prefillContent = "```yaml\n基本信息:"; 
-
-    if (isTemplateMode) {
-        const isRefine = data.mode === 'refine';
-
-        const storedPrompt = store.promptsCache.templateGen || '';
-        const defaultPrompt = DEFAULT_PROMPTS.templateGen;
-
-        const basePrompt = (storedPrompt && storedPrompt.includes('{{userRequirements}}'))
-            ? storedPrompt
-            : defaultPrompt;
-
-        const templateBlock = isRefine && currentText
-            ? `[Current Template to Refine]:\n\`\`\`yaml\n${currentText}\n\`\`\``
-            : '';
-        const reqBlock = requestText.trim()
-            ? `[User Requirements]:\n${requestText.trim()}`
-            : '';
-
-        userMessageContent = basePrompt
-            .replace(/{{user}}/g, currentName)
-            .replace(/{{char}}/g, charName)
-            .replace(/{{charInfo}}/g, wrappedCharInfo)
-            .replace(/{{currentTemplate}}/g, templateBlock)
-            .replace(/{{userRequirements}}/g, reqBlock);
-
-        if (reqBlock && !userMessageContent.includes('[User Requirements]')) {
-            userMessageContent += '\n\n' + reqBlock;
-        }
-
-        prefillContent = "```yaml\n";
-    } else if (chatInferEnabled) {
-        const existingBlock = (currentText && currentText.trim().length > 20)
-            ? wrapAsXiTaReference(currentText, `Existing Profile: ${currentName}`)
-            : '';
-        const basePrompt = store.promptsCache.chatInfer || DEFAULT_PROMPTS.chatInfer;
-
-        userMessageContent = basePrompt
-            .replace(/{{user}}/g, currentName)
-            .replace(/{{char}}/g, charName)
-            .replace(/{{targetName}}/g, currentName)
-            .replace(/{{charInfo}}/g, wrappedCharInfo)
-            .replace(/{{greetings}}/g, wrappedGreetings)
-            .replace(/{{template}}/g, wrappedTags)
-            .replace(/{{input}}/g, wrappedInput)
-            .replace(/{{currentText}}/g, existingBlock)
-            .replace(/{{userPersona}}/g, wrappedUserPersona)
-            .replace(/{{chatHistory}}/g, wrappedChatHistory);
-    } else {
-        const basePrompt = store.promptsCache.personaGen || DEFAULT_PROMPTS.personaGen;
-        
-        userMessageContent = basePrompt
-            .replace(/{{user}}/g, currentName)
-            .replace(/{{char}}/g, charName)
-            .replace(/{{charInfo}}/g, wrappedCharInfo)
-            .replace(/{{greetings}}/g, wrappedGreetings)
-            .replace(/{{template}}/g, wrappedTags)
-            .replace(/{{input}}/g, wrappedInput)
-            .replace(/{{userPersona}}/g, wrappedUserPersona)
-            .replace(/{{chatHistory}}/g, wrappedChatHistory);
-    }
-
-    console.log("[PW] Sending Prompt...");
+// 单次模型调用：组装 system（预设）＋世界书＋用户消息＋prefill，自带超时与中断控制器。
+// 生成链每段各调一次，从而每段超时独立；API 配置 / 流式 / prefill 兼容逻辑三段共用。
+async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent, label }) {
+    console.log(`[PW] Sending Prompt (${label})...`);
     
     let responseContent = "";
     const controller = new AbortController();
@@ -466,23 +382,147 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
     } finally { 
         clearTimeout(timeoutId); 
     }
-    
-    if (!responseContent) throw new Error("API 返回为空 (Empty Response)");
-
-    const yamlRegex = /```(?:yaml)?\n([\s\S]*?)```/i;
-    const match = responseContent.match(yamlRegex);
-    
-    if (match && match[1]) {
-        responseContent = match[1].trim(); 
-    } else {
-        if (prefillContent && !responseContent.startsWith(prefillContent) && !responseContent.startsWith("```yaml")) {
-            const trimRes = responseContent.trim();
-            if (!trimRes.startsWith("```yaml") && (trimRes.startsWith("姓名") || trimRes.startsWith("  姓名") || trimRes.startsWith("基本信息"))) {
-                 responseContent = prefillContent + responseContent;
-            }
-        }
-        responseContent = responseContent.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
-    }
 
     return responseContent;
+}
+
+export async function runGeneration(data, apiConfig) {
+    let charName = "Char";
+    if (window.TavernHelper && window.TavernHelper.getCharData) {
+        const cData = window.TavernHelper.getCharData('current');
+        if (cData) charName = cData.name;
+    }
+    const currentName = $('.persona_name').first().text().trim() || 
+                        $('h5#your_name').text().trim() || "User";
+
+    if (!store.promptsCache || !store.promptsCache.personaGen) loadData(); 
+
+    const rawCharInfo = getCharacterInfoText(); 
+    const rawWi = data.wiText || ""; 
+    const rawGreetings = data.greetingsText || "";
+    const currentText = data.currentText || "";
+    const requestText = data.request || "";
+    const isRefine = data.mode === 'refine';
+    
+    const chatHistConf = store.uiStateCache.chatHistory || {};
+    const chatInferEnabled = !!chatHistConf.enabled;
+
+    let rawUserPersona = "";
+    let rawChatHistory = "";
+    if (chatInferEnabled) {
+        const filteredResult = await fetchChatHistoryFiltered();
+        rawChatHistory = filteredResult.text;
+        rawUserPersona = getActivePersonaDescription();
+    }
+
+    const wrappedCharInfo = wrapAsXiTaReference(rawCharInfo, `Entity Profile: ${charName}`);
+    const wrappedWi = wrapAsXiTaReference(rawWi, "Global State Variables"); 
+    const wrappedGreetings = wrapAsXiTaReference(rawGreetings, "Init Sequence");
+    const wrappedInput = wrapInputForSafety(requestText, currentText, isRefine);
+    
+    const wrappedUserPersona = chatInferEnabled ? wrapAsXiTaReference(rawUserPersona, `User Profile: ${currentName}`) : "";
+    const wrappedChatHistory = chatInferEnabled ? wrapAsXiTaReference(rawChatHistory, `Chat History Reference`) : "";
+
+    // [Fix 10] Use selected preset logic
+    let activeSystemPrompt = getRealSystemPrompt(store.uiStateCache.generationPreset);
+
+    if (!activeSystemPrompt && store.uiStateCache.generationPreset !== 'pure') {
+        activeSystemPrompt = FALLBACK_SYSTEM_PROMPT.replace(/{{user}}/g, currentName);
+    } else if (activeSystemPrompt) {
+        // [Fix 9] Prevent WI duplication by stripping macros from fetched system prompt
+        activeSystemPrompt = activeSystemPrompt
+            .replace(/{{user}}/g, currentName)
+            .replace(/{{char}}/g, charName)
+            .replace(/{{world_info}}/gi, '')
+            .replace(/{{wInfo}}/gi, '')
+            .replace(/{{worldInfo}}/gi, '');
+    } else {
+        // Pure mode returns empty string
+        activeSystemPrompt = ""; 
+    }
+
+    // 策展产出 schema（纯键），起手词只需围栏头；档案段起手词从目标结构首键派生——
+    // schema 由策展动态产出，不保证首块是基本信息，硬编码会逼模型续写出 schema 外的块。
+    const PREFILL_SCHEMA = "```yaml\n";
+    const profilePrefillFor = (structureText) => {
+        const firstKey = parseYamlToBlocks(structureText || "").keys().next().value;
+        return firstKey ? "```yaml\n" + firstKey + ":" : "```yaml\n基本信息:";
+    };
+
+    const finalize = (rawText, prefillContent) => {
+        if (!rawText) throw new Error("API 返回为空 (Empty Response)");
+        return stripYamlFence(rawText, prefillContent);
+    };
+
+    // AI 调用 1：策展Schema。空输出或剥围栏后不可解析 → 回退默认模板，链路不中断。
+    const curateSchema = async () => {
+        const basePrompt = store.promptsCache.curator || DEFAULT_PROMPTS.curator;
+        const userMessageContent = basePrompt
+            .replace(/{{user}}/g, currentName)
+            .replace(/{{char}}/g, charName)
+            .replace(/{{charInfo}}/g, wrappedCharInfo)
+            .replace(/{{userRequirements}}/g, wrappedInput);
+        const raw = await requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: PREFILL_SCHEMA, label: 'curator' });
+        const curated = raw ? stripYamlFence(raw, PREFILL_SCHEMA) : "";
+        if (!isParsableSchema(curated)) {
+            console.warn("[PW] 策展输出为空或不可解析，回退默认模板：", curated);
+            return DEFAULT_TEMPLATES.user;
+        }
+        return curated;
+    };
+
+    if (chatInferEnabled) {
+        const existingBlock = (currentText && currentText.trim().length > 20)
+            ? wrapAsXiTaReference(currentText, `Existing Profile: ${currentName}`)
+            : '';
+        const basePrompt = store.promptsCache.chatInfer || DEFAULT_PROMPTS.chatInfer;
+
+        const schemaText = getCurrentSchema();
+        const userMessageContent = basePrompt
+            .replace(/{{user}}/g, currentName)
+            .replace(/{{char}}/g, charName)
+            .replace(/{{targetName}}/g, currentName)
+            .replace(/{{charInfo}}/g, wrappedCharInfo)
+            .replace(/{{greetings}}/g, wrappedGreetings)
+            .replace(/{{template}}/g, wrapAsXiTaReference(schemaText, "Schema Definition"))
+            .replace(/{{input}}/g, wrappedInput)
+            .replace(/{{currentText}}/g, existingBlock)
+            .replace(/{{userPersona}}/g, wrappedUserPersona)
+            .replace(/{{chatHistory}}/g, wrappedChatHistory);
+
+        const prefill = profilePrefillFor(schemaText);
+        const raw = await requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: prefill, label: 'chatInfer' });
+        return finalize(raw, prefill);
+    }
+
+    // 首次生成两段：先策展并持久化 schema（聊天推断与后续 refine 复用同一 schema，免重复策展）；
+    // refine 单段：目标缓冲区自带完整结构，不注入 <target_schema>。
+    let schemaForGen = "";
+    if (!isRefine) {
+        setGenProgress("策展模板中…");
+        schemaForGen = await curateSchema();
+        store.userContext.curatedSchema = schemaForGen;
+        saveData();
+        setGenProgress("生成中…");
+    }
+
+    const basePrompt = store.promptsCache.personaGen || DEFAULT_PROMPTS.personaGen;
+    const wrappedTags = schemaForGen ? wrapAsXiTaReference(schemaForGen, "Schema Definition") : "";
+
+    let userMessageContent = basePrompt
+        .replace(/{{user}}/g, currentName)
+        .replace(/{{char}}/g, charName)
+        .replace(/{{charInfo}}/g, wrappedCharInfo)
+        .replace(/{{greetings}}/g, wrappedGreetings)
+        .replace(/{{template}}/g, wrappedTags)
+        .replace(/{{input}}/g, wrappedInput)
+        .replace(/{{userPersona}}/g, wrappedUserPersona)
+        .replace(/{{chatHistory}}/g, wrappedChatHistory);
+
+    if (isRefine) userMessageContent = stripTargetSchemaBlock(userMessageContent);
+
+    // refine 无注入 schema，起手词从目标缓冲区（现有人设）首键派生；首次生成则从策展 schema 派生
+    const profilePrefill = profilePrefillFor(schemaForGen || currentText);
+    const raw = await requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: profilePrefill, label: isRefine ? 'refine' : 'personaGen' });
+    return finalize(raw, profilePrefill);
 }
