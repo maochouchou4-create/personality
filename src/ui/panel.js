@@ -239,15 +239,25 @@ export async function openCreatorPopup() {
                             value="${Number(config.indepTimeout) > 0 ? Number(config.indepTimeout) : 300}"
                             style="flex:1;" placeholder="300">
                     </div>
-                    <div class="pw-row">
-                        <label title="开启后以 SSE 流式方式接收响应，避免 Cloudflare / 酒馆后端 / 中转站在等待完整响应时返回 504 Gateway Timeout。此开关同时作用于独立 API 和主 API。">流式输出</label>
-                        <div style="flex:1; display:flex; align-items:center; gap:8px;">
-                            <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
-                                <input type="checkbox" id="pw-indep-stream" ${config.indepStream !== false ? 'checked' : ''}>
-                                <span style="opacity:0.85;">启用 (推荐，避免 504)</span>
-                            </label>
-                        </div>
+                </div>
+                <!-- 两来源通用设置：位于 #pw-indep-settings 之外，主 API 选中时同样可见可改 -->
+                <div class="pw-row" style="margin-top:12px;">
+                    <label title="开启后以 SSE 流式方式接收响应，避免 Cloudflare / 酒馆后端 / 中转站在等待完整响应时返回 504 Gateway Timeout。此开关同时作用于独立 API 和主 API。">流式输出</label>
+                    <div style="flex:1; display:flex; align-items:center; gap:8px;">
+                        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                            <input type="checkbox" id="pw-indep-stream" ${config.indepStream !== false ? 'checked' : ''}>
+                            <span style="opacity:0.85;">启用 (推荐，避免 504)</span>
+                        </label>
                     </div>
+                </div>
+                <div class="pw-row">
+                    <label title="向模型请求的推理深度，越高越慢越贵。模型不识别该参数时会被忽略或报错，属预期。">思考强度</label>
+                    <select id="pw-thinking-effort" class="pw-select" style="flex:1;">
+                        <option value="off" ${config.thinkingEffort === 'off' ? 'selected' : ''}>关</option>
+                        <option value="low" ${config.thinkingEffort === 'low' ? 'selected' : ''}>低</option>
+                        <option value="medium" ${config.thinkingEffort === 'medium' ? 'selected' : ''}>中</option>
+                        <option value="high" ${config.thinkingEffort === 'high' ? 'selected' : ''}>高</option>
+                    </select>
                 </div>
             </div>
         </div>

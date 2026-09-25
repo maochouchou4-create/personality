@@ -4,13 +4,15 @@ import { loadState } from "./state.js";
 
 export const defaultSettings = {
     autoSwitchPersona: true, syncToWorldInfo: false,
-    historyLimit: 9999, 
     apiSource: 'main',
     indepApiUrl: 'https://api.openai.com/v1', indepApiKey: '', indepApiModel: 'gpt-3.5-turbo',
     // 独立 API 请求超时（秒）。Claude / 第三方中转站输出长 YAML 经常 >2min，默认给 5 min。
     indepTimeout: 300,
     // 流式输出。默认开启，避免 Cloudflare / 酒馆后端 / 中转站的 504 Gateway Timeout。
-    indepStream: true
+    indepStream: true,
+    // 思考强度：off / low / medium / high。off 表示不向请求注入推理档位字段，
+    // 其余档位由 generation.js 按端点能力决定注入（OpenAI 兼容真生效、主 API best-effort、Anthropic 原生不发）。
+    thinkingEffort: 'off'
     // max_tokens 由 resolveMaxTokens() 按模型名自动推断，不放在设置里
 };
 

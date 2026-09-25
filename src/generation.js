@@ -222,6 +222,9 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
     const useStream = (apiConfig && typeof apiConfig.indepStream === 'boolean')
         ? apiConfig.indepStream
         : getIndepStreamEnabled();
+    // 思考强度：off 表示不注入；仅 OpenAI 兼容分支真生效，主 API 为 best-effort，
+    // Anthropic 原生端点严格 schema 对未知字段直接 400，故该分支不发（其正确映射是 thinking.budget_tokens，语义不同，不做）。
+    const effort = (apiConfig && apiConfig.thinkingEffort) || 'off';
     // max_tokens 由 resolveMaxTokens() 按模型名自动推断，不再由用户配置
     console.log(`[PW] Request timeout=${timeoutSec}s, stream=${useStream}`);
 
@@ -289,6 +292,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
                     // 仅当隐藏覆盖写了非 0 值时才发送
                     const openaiMaxTokens = resolveMaxTokens(apiConfig.indepApiModel, false);
                     if (openaiMaxTokens > 0) payload.max_tokens = openaiMaxTokens;
+                    if (effort !== 'off') payload.reasoning_effort = effort;
                     if (useStream) {
                         payload.stream = true;
                         // OpenAI 流式建议顺便带上 usage
@@ -339,7 +343,9 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
                             chat_history: { prompts: [], with_depth_entries: false, author_note: '' }
                         },
                         injects: [], max_chat_history: 0,
-                        should_stream: useStream
+                        should_stream: useStream,
+                        // best-effort：宿主对未知键宽容则生效，被忽略无害（非 HTTP schema 校验）
+                        ...(effort !== 'off' ? { reasoning_effort: effort } : {})
                     });
                 } else {
                     throw new Error("ST版本过旧或未安装 TavernHelper");

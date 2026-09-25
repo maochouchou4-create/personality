@@ -1,6 +1,6 @@
-// ST 运行时取数适配层：聊天记录/角色信息/开场白/人格描述/头像的唯一取数通道，供生成域与 UI 双侧消费。
-// TavernHelper/SillyTavern/window/$ 为宿主全局，不经 import；escapeRegexPW/applyTagFilters/estimateTokens
-// 为本文件内部实现细节，不对外导出。
+// ST 运行时取数适配层：角色信息 / 开场白 / 用户人格描述的唯一取数通道，供生成域与 UI 侧消费。
+// TavernHelper / SillyTavern / window / $ 为宿主全局，不经 import；getContext 走 ST 的 extensions 模块边界。
+// 宿主字段存在多种历史形态（TavernHelper 与原生 context 二选一），差异只在本层吸收，不外泄给消费方。
 import { getContext } from "../../../../extensions.js";
 
 export function getCharacterInfoText() {

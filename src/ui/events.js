@@ -14,6 +14,20 @@ const BUTTON_ID = 'pw_persona_tool_btn';
 
 const forcePaint = () => new Promise(resolve => setTimeout(resolve, 50));
 
+// 生成 / 润色 / 重 Roll 三处共用的请求配置构造（单一事实源，避免三份字段集各写一遍后漂移）。
+// 变动字段（mode / request / currentText）由调用点传入，上下文与 API 设置统一从 DOM 读取。
+// thinkingEffort 只做透传，是否注入请求体由 generation.js 按端点能力决定。
+const buildApiConfig = (contextData, fields) => ({
+    ...fields,
+    wiText: contextData.wi,
+    greetingsText: contextData.greetings,
+    apiSource: $('#pw-api-source').val(),
+    indepApiUrl: $('#pw-api-url').val(),
+    indepApiKey: $('#pw-api-key').val(),
+    indepApiModel: $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null,
+    thinkingEffort: $('#pw-thinking-effort').val()
+});
+
 export function bindEvents() {
     if (window.stPersonaWeaverBound) return;
     window.stPersonaWeaverBound = true;
@@ -362,18 +376,11 @@ export function bindEvents() {
 
         try {
             const contextData = await collectContextData();
-            const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const config = {
-                mode: 'refine', 
-                request: refineReq, 
-                currentText: oldText, 
-                wiText: contextData.wi,           
-                greetingsText: contextData.greetings,
-                apiSource: $('#pw-api-source').val(), 
-                indepApiUrl: $('#pw-api-url').val(),
-                indepApiKey: $('#pw-api-key').val(), 
-                indepApiModel: modelVal
-            };
+            const config = buildApiConfig(contextData, {
+                mode: 'refine',
+                request: refineReq,
+                currentText: oldText
+            });
             const responseText = await runGeneration(config, config);
 
             // 复用提取出来的渲染函数
@@ -411,18 +418,11 @@ export function bindEvents() {
 
         try {
             const contextData = await collectContextData();
-            const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const config = {
-                mode: 'refine', 
+            const config = buildApiConfig(contextData, {
+                mode: 'refine',
                 request: store.lastRefineRequest,
-                currentText: oldText, 
-                wiText: contextData.wi,           
-                greetingsText: contextData.greetings,
-                apiSource: $('#pw-api-source').val(), 
-                indepApiUrl: $('#pw-api-url').val(),
-                indepApiKey: $('#pw-api-key').val(), 
-                indepApiModel: modelVal
-            };
+                currentText: oldText
+            });
             
             const responseText = await runGeneration(config, config);
 
@@ -469,18 +469,11 @@ export function bindEvents() {
 
         try {
             const contextData = await collectContextData();
-            const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const config = {
-                mode: 'initial', 
+            const config = buildApiConfig(contextData, {
+                mode: 'initial',
                 request: req || '',
-                currentText: '',
-                wiText: contextData.wi,
-                greetingsText: contextData.greetings,
-                apiSource: $('#pw-api-source').val(), 
-                indepApiUrl: $('#pw-api-url').val(),
-                indepApiKey: $('#pw-api-key').val(), 
-                indepApiModel: modelVal
-            };
+                currentText: ''
+            });
             const text = await runGeneration(config, config);
             $('#pw-result-text').val(text);
             $('#pw-result-area').fadeIn();
@@ -623,6 +616,13 @@ export function bindEvents() {
     });
 
     $(document).on('change.pw', '#pw-api-source', function () { $('#pw-indep-settings').toggle($(this).val() === 'independent'); });
+
+    // 思考强度是请求级参数、与 API 来源无关，单独持久化（不进 saveCurrentState 的独立 API 分支）
+    $(document).on('change.pw', '#pw-thinking-effort', function () {
+        const savedState = loadState();
+        savedState.localConfig = { ...(savedState.localConfig || {}), thinkingEffort: $(this).val() };
+        saveState(savedState);
+    });
 
     $(document).on('click.pw', '#pw-api-fetch', async function (e) {
         e.preventDefault();
