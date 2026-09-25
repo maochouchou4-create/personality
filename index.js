@@ -369,36 +369,36 @@ const TEXT = {
     TOAST_QUOTA_ERROR: "浏览器存储空间不足 (Quota Exceeded)，请清理旧记录。"
 };
 
-let historyCache = [];
-let currentTemplate = defaultYamlTemplate;
-let promptsCache = { 
-    templateGen: defaultTemplateGenPrompt,
-    npcTemplateGen: defaultNpcTemplateGenPrompt,
-    templateRefine: defaultTemplateRefinePrompt,
-    npcTemplateRefine: defaultNpcTemplateRefinePrompt,
-    personaGen: defaultPersonaGenPrompt,
-    npcGen: defaultNpcGenPrompt, 
-    chatInfer: defaultChatInferPrompt,
-    npcChatInfer: defaultNpcChatInferPrompt,
-    initial: fallbackSystemPrompt 
+const store = {
+    historyCache: [],
+    promptsCache: {
+        templateGen: defaultTemplateGenPrompt,
+        npcTemplateGen: defaultNpcTemplateGenPrompt,
+        templateRefine: defaultTemplateRefinePrompt,
+        npcTemplateRefine: defaultNpcTemplateRefinePrompt,
+        personaGen: defaultPersonaGenPrompt,
+        npcGen: defaultNpcGenPrompt,
+        chatInfer: defaultChatInferPrompt,
+        npcChatInfer: defaultNpcChatInferPrompt,
+        initial: fallbackSystemPrompt
+    },
+    availableWorldBooks: [],
+    isEditingTemplate: false,
+    isProcessing: false,
+    currentGreetingsList: [],
+    wiSelectionCache: {},
+    uiStateCache: { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } },
+    avatarImagesCache: [], // [{id, name, base64, tags:['user'|'npc'], addedAt}]
+    currentUserAvatarBase64: null, // pre-loaded on panel open
+    historyPage: 1,
+    lastRefineRequest: "",
+    userContext: { template: defaultYamlTemplate, request: "", result: "", hasResult: false },
+    npcContext: { template: defaultNpcTemplate, request: "", result: "", hasResult: false },
+    currentDiffBlocks: [],
 };
-let availableWorldBooks = [];
-let isEditingTemplate = false;
-let lastRawResponse = "";
-let isProcessing = false;
-let currentGreetingsList = []; 
-let wiSelectionCache = {};
-let uiStateCache = { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
-let avatarImagesCache = []; // [{id, name, base64, tags:['user'|'npc'], addedAt}]
-let currentUserAvatarBase64 = null; // pre-loaded on panel open
-let historyPage = 1;
-let lastRefineRequest = ""; 
-
-let userContext = { template: defaultYamlTemplate, request: "", result: "", hasResult: false };
-let npcContext = { template: defaultNpcTemplate, request: "", result: "", hasResult: false };
 
 const getCurrentTemplate = () => {
-    return uiStateCache.generationMode === 'npc' ? npcContext.template : userContext.template;
+    return store.uiStateCache.generationMode === 'npc' ? store.npcContext.template : store.userContext.template;
 }
 
 // ============================================================================
@@ -511,7 +511,7 @@ async function getChatHistoryText(limit = 15) {
 async function fetchChatHistoryFiltered(opts = {}) {
     if (!window.TavernHelper || !window.TavernHelper.getChatMessages) return { text: "", messages: [], tokenEstimate: 0 };
 
-    const chatConf = uiStateCache.chatHistory || {};
+    const chatConf = store.uiStateCache.chatHistory || {};
     const floorFrom = opts.floorFrom ?? chatConf.floorFrom;
     const floorTo = opts.floorTo ?? chatConf.floorTo;
     const preset = opts.preset ?? chatConf.preset ?? '20';
@@ -683,8 +683,8 @@ async function collectContextData() {
     } catch (e) { console.warn(e); }
 
     const selectedIdx = $('#pw-greetings-select').val();
-    if (selectedIdx !== "" && selectedIdx !== null && currentGreetingsList[selectedIdx]) {
-        greetingsContent = currentGreetingsList[selectedIdx].content;
+    if (selectedIdx !== "" && selectedIdx !== null && store.currentGreetingsList[selectedIdx]) {
+        greetingsContent = store.currentGreetingsList[selectedIdx].content;
     }
 
     return {
@@ -875,7 +875,7 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
     const currentName = $('.persona_name').first().text().trim() || 
                         $('h5#your_name').text().trim() || "User";
 
-    if (!promptsCache || !promptsCache.personaGen) loadData(); 
+    if (!store.promptsCache || !store.promptsCache.personaGen) loadData(); 
 
     const rawCharInfo = getCharacterInfoText(); 
     const rawWi = data.wiText || ""; 
@@ -883,8 +883,8 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
     const currentText = data.currentText || "";
     const requestText = data.request || "";
     
-    const isNpcMode = uiStateCache.generationMode === 'npc';
-    const chatHistConf = uiStateCache.chatHistory || {};
+    const isNpcMode = store.uiStateCache.generationMode === 'npc';
+    const chatHistConf = store.uiStateCache.chatHistory || {};
     const chatInferEnabled = chatHistConf.enabled && !isTemplateMode;
 
     let rawUserPersona = "";
@@ -907,9 +907,9 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
     const wrappedChatHistory = chatInferEnabled ? wrapAsXiTaReference(rawChatHistory, `Chat History Reference`) : "";
 
     // [Fix 10] Use selected preset logic
-    let activeSystemPrompt = getRealSystemPrompt(uiStateCache.generationPreset);
+    let activeSystemPrompt = getRealSystemPrompt(store.uiStateCache.generationPreset);
 
-    if (!activeSystemPrompt && uiStateCache.generationPreset !== 'pure') {
+    if (!activeSystemPrompt && store.uiStateCache.generationPreset !== 'pure') {
         activeSystemPrompt = fallbackSystemPrompt.replace(/{{user}}/g, currentName);
     } else if (activeSystemPrompt) {
         // [Fix 9] Prevent WI duplication by stripping macros from fetched system prompt
@@ -931,8 +931,8 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
         const isRefine = data.mode === 'refine';
 
         let storedPrompt = isNpcMode
-            ? (promptsCache.npcTemplateGen || '')
-            : (promptsCache.templateGen || '');
+            ? (store.promptsCache.npcTemplateGen || '')
+            : (store.promptsCache.templateGen || '');
         const defaultPrompt = isNpcMode ? defaultNpcTemplateGenPrompt : defaultTemplateGenPrompt;
 
         let basePrompt = (storedPrompt && storedPrompt.includes('{{userRequirements}}'))
@@ -964,8 +964,8 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
             ? wrapAsXiTaReference(currentText, `Existing Profile: ${targetName}`)
             : '';
         let basePrompt = isNpcMode
-            ? (promptsCache.npcChatInfer || defaultNpcChatInferPrompt)
-            : (promptsCache.chatInfer || defaultChatInferPrompt);
+            ? (store.promptsCache.npcChatInfer || defaultNpcChatInferPrompt)
+            : (store.promptsCache.chatInfer || defaultChatInferPrompt);
 
         userMessageContent = basePrompt
             .replace(/{{user}}/g, currentName)
@@ -980,8 +980,8 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
             .replace(/{{chatHistory}}/g, wrappedChatHistory);
     } else {
         let basePrompt = isNpcMode
-            ? (promptsCache.npcGen || defaultNpcGenPrompt)
-            : (promptsCache.personaGen || defaultPersonaGenPrompt);
+            ? (store.promptsCache.npcGen || defaultNpcGenPrompt)
+            : (store.promptsCache.personaGen || defaultPersonaGenPrompt);
         
         userMessageContent = basePrompt
             .replace(/{{user}}/g, currentName)
@@ -997,14 +997,14 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
     // NPC多角色指令已在 defaultNpcGenPrompt 中包含，无需运行时注入
 
     // Collect selected avatar images (auto-enabled when any image is selected)
-    const avatarConf = uiStateCache.avatarRef || {};
+    const avatarConf = store.uiStateCache.avatarRef || {};
     const selectedAvatarImages = [];
     if (!isTemplateMode && avatarConf.selectedIds && avatarConf.selectedIds.length > 0) {
         for (const id of avatarConf.selectedIds) {
-            if (id === '__user_current__' && currentUserAvatarBase64) {
-                selectedAvatarImages.push(currentUserAvatarBase64);
+            if (id === '__user_current__' && store.currentUserAvatarBase64) {
+                selectedAvatarImages.push(store.currentUserAvatarBase64);
             } else {
-                const img = avatarImagesCache.find(i => i.id === id);
+                const img = store.avatarImagesCache.find(i => i.id === id);
                 if (img && img.base64) selectedAvatarImages.push(img.base64);
             }
         }
@@ -1219,7 +1219,6 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
     }
     
     if (!responseContent) throw new Error("API 返回为空 (Empty Response)");
-    lastRawResponse = responseContent;
 
     const yamlRegex = /```(?:yaml)?\n([\s\S]*?)```/i;
     const match = responseContent.match(yamlRegex);
@@ -1254,7 +1253,7 @@ function safeLocalStorageSet(key, value) {
 }
 
 function loadData() {
-    try { historyCache = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY)) || []; } catch { historyCache = []; }
+    try { store.historyCache = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY)) || []; } catch { store.historyCache = []; }
     try {
         const p = JSON.parse(localStorage.getItem(STORAGE_KEY_PROMPTS));
         const migrateTemplatePrompt = (stored, def) =>
@@ -1295,7 +1294,7 @@ function loadData() {
             if (looksLikeOldDefault) return def;
             return stored;
         };
-        promptsCache = {
+        store.promptsCache = {
             templateGen: migrateTemplatePrompt(p && p.templateGen, defaultTemplateGenPrompt),
             npcTemplateGen: migrateTemplatePrompt(p && p.npcTemplateGen, defaultNpcTemplateGenPrompt),
             templateRefine: defaultTemplateRefinePrompt,
@@ -1307,7 +1306,7 @@ function loadData() {
             initial: (p && p.initial) ? p.initial : fallbackSystemPrompt
         };
     } catch { 
-        promptsCache = { 
+        store.promptsCache = { 
             templateGen: defaultTemplateGenPrompt, npcTemplateGen: defaultNpcTemplateGenPrompt,
             templateRefine: defaultTemplateRefinePrompt, npcTemplateRefine: defaultNpcTemplateRefinePrompt,
             personaGen: defaultPersonaGenPrompt, npcGen: defaultNpcGenPrompt, 
@@ -1315,52 +1314,52 @@ function loadData() {
             initial: fallbackSystemPrompt 
         }; 
     }
-    try { wiSelectionCache = JSON.parse(localStorage.getItem(STORAGE_KEY_WI_STATE)) || {}; } catch { wiSelectionCache = {}; }
+    try { store.wiSelectionCache = JSON.parse(localStorage.getItem(STORAGE_KEY_WI_STATE)) || {}; } catch { store.wiSelectionCache = {}; }
     
     // [Updated] Load UI State with Preset info + chatHistory config
     const defaultUiState = { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
     try {
-        uiStateCache = JSON.parse(localStorage.getItem(STORAGE_KEY_UI_STATE)) || defaultUiState;
-        if (!uiStateCache.chatHistory) uiStateCache.chatHistory = { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] };
-        if (!uiStateCache.avatarRef || typeof uiStateCache.avatarRef === 'boolean') {
-            uiStateCache.avatarRef = { enabled: !!uiStateCache.avatarRef, selectedIds: [] };
-        } else if (!Array.isArray(uiStateCache.avatarRef.selectedIds)) {
-            uiStateCache.avatarRef.selectedIds = [];
+        store.uiStateCache = JSON.parse(localStorage.getItem(STORAGE_KEY_UI_STATE)) || defaultUiState;
+        if (!store.uiStateCache.chatHistory) store.uiStateCache.chatHistory = { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] };
+        if (!store.uiStateCache.avatarRef || typeof store.uiStateCache.avatarRef === 'boolean') {
+            store.uiStateCache.avatarRef = { enabled: !!store.uiStateCache.avatarRef, selectedIds: [] };
+        } else if (!Array.isArray(store.uiStateCache.avatarRef.selectedIds)) {
+            store.uiStateCache.avatarRef.selectedIds = [];
         }
-    } catch { uiStateCache = defaultUiState; }
+    } catch { store.uiStateCache = defaultUiState; }
     // 清理主题系统遗留的存量数据（theme 字段已无任何消费者）
-    delete uiStateCache.theme;
+    delete store.uiStateCache.theme;
     localStorage.removeItem('pw_custom_themes_v1');
 
-    try { avatarImagesCache = JSON.parse(localStorage.getItem(STORAGE_KEY_AVATAR_IMAGES)) || []; } catch { avatarImagesCache = []; }
+    try { store.avatarImagesCache = JSON.parse(localStorage.getItem(STORAGE_KEY_AVATAR_IMAGES)) || []; } catch { store.avatarImagesCache = []; }
 
     // Load Isolated Context Data
     try {
         const u = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA_USER));
-        userContext = u || { template: defaultYamlTemplate, request: "", result: "", hasResult: false };
+        store.userContext = u || { template: defaultYamlTemplate, request: "", result: "", hasResult: false };
         if(!u) {
             const oldT = localStorage.getItem(STORAGE_KEY_TEMPLATE);
-            if(oldT && oldT.length > 50) userContext.template = oldT;
+            if(oldT && oldT.length > 50) store.userContext.template = oldT;
         }
-    } catch { userContext = { template: defaultYamlTemplate, request: "", result: "", hasResult: false }; }
+    } catch { store.userContext = { template: defaultYamlTemplate, request: "", result: "", hasResult: false }; }
 
     try {
         const n = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA_NPC));
-        npcContext = n || { template: defaultNpcTemplate, request: "", result: "", hasResult: false };
-    } catch { npcContext = { template: defaultNpcTemplate, request: "", result: "", hasResult: false }; }
+        store.npcContext = n || { template: defaultNpcTemplate, request: "", result: "", hasResult: false };
+    } catch { store.npcContext = { template: defaultNpcTemplate, request: "", result: "", hasResult: false }; }
 }
 
 function saveData() {
-    safeLocalStorageSet(STORAGE_KEY_HISTORY, JSON.stringify(historyCache));
-    safeLocalStorageSet(STORAGE_KEY_PROMPTS, JSON.stringify(promptsCache));
-    safeLocalStorageSet(STORAGE_KEY_UI_STATE, JSON.stringify(uiStateCache));
-    safeLocalStorageSet(STORAGE_KEY_DATA_USER, JSON.stringify(userContext));
-    safeLocalStorageSet(STORAGE_KEY_DATA_NPC, JSON.stringify(npcContext));
+    safeLocalStorageSet(STORAGE_KEY_HISTORY, JSON.stringify(store.historyCache));
+    safeLocalStorageSet(STORAGE_KEY_PROMPTS, JSON.stringify(store.promptsCache));
+    safeLocalStorageSet(STORAGE_KEY_UI_STATE, JSON.stringify(store.uiStateCache));
+    safeLocalStorageSet(STORAGE_KEY_DATA_USER, JSON.stringify(store.userContext));
+    safeLocalStorageSet(STORAGE_KEY_DATA_NPC, JSON.stringify(store.npcContext));
 }
 
 function saveHistory(item) {
     const limit = 1000; 
-    const mode = uiStateCache.generationMode; // 'user' or 'npc'
+    const mode = store.uiStateCache.generationMode; // 'user' or 'npc'
 
     if (!item.title || item.title === "未命名") {
         const context = getContext();
@@ -1388,8 +1387,8 @@ function saveHistory(item) {
         }
     }
 
-    historyCache.unshift(item);
-    if (historyCache.length > limit) historyCache = historyCache.slice(0, limit);
+    store.historyCache.unshift(item);
+    if (store.historyCache.length > limit) store.historyCache = store.historyCache.slice(0, limit);
     saveData();
 }
 
@@ -1400,17 +1399,17 @@ function getWiCacheKey() {
 
 function loadWiSelection(bookName) {
     const charKey = getWiCacheKey();
-    if (wiSelectionCache[charKey] && wiSelectionCache[charKey][bookName]) {
-        return wiSelectionCache[charKey][bookName]; 
+    if (store.wiSelectionCache[charKey] && store.wiSelectionCache[charKey][bookName]) {
+        return store.wiSelectionCache[charKey][bookName]; 
     }
     return null;
 }
 
 function saveWiSelection(bookName, uids) {
     const charKey = getWiCacheKey();
-    if (!wiSelectionCache[charKey]) wiSelectionCache[charKey] = {};
-    wiSelectionCache[charKey][bookName] = uids;
-    safeLocalStorageSet(STORAGE_KEY_WI_STATE, JSON.stringify(wiSelectionCache));
+    if (!store.wiSelectionCache[charKey]) store.wiSelectionCache[charKey] = {};
+    store.wiSelectionCache[charKey][bookName] = uids;
+    safeLocalStorageSet(STORAGE_KEY_WI_STATE, JSON.stringify(store.wiSelectionCache));
 }
 
 function saveState(data) { safeLocalStorageSet(STORAGE_KEY_STATE, JSON.stringify(data)); }
@@ -1586,7 +1585,7 @@ async function readSSEResponse(res, isAnthropic, onDelta) {
     return fullText;
 }
 
-function saveAvatarImages() { safeLocalStorageSet(STORAGE_KEY_AVATAR_IMAGES, JSON.stringify(avatarImagesCache)); }
+function saveAvatarImages() { safeLocalStorageSet(STORAGE_KEY_AVATAR_IMAGES, JSON.stringify(store.avatarImagesCache)); }
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
 
 function compressImage(base64, maxSize = 512, quality = 0.7) {
@@ -1689,7 +1688,7 @@ async function syncToWorldInfoViaHelper(userName, content) {
 
     let entryTitle = "";
     let entryKeys = [];
-    const isNpc = uiStateCache.generationMode === 'npc';
+    const isNpc = store.uiStateCache.generationMode === 'npc';
 
     if (isNpc) {
         let npcNames = extractAllNpcNames(content);
@@ -1739,20 +1738,20 @@ async function syncToWorldInfoViaHelper(userName, content) {
 }
 
 async function loadAvailableWorldBooks() {
-    availableWorldBooks = [];
+    store.availableWorldBooks = [];
     if (window.TavernHelper && typeof window.TavernHelper.getWorldbookNames === 'function') {
-        try { availableWorldBooks = window.TavernHelper.getWorldbookNames(); } catch { }
+        try { store.availableWorldBooks = window.TavernHelper.getWorldbookNames(); } catch { }
     }
-    if (availableWorldBooks.length === 0 && window.world_names && Array.isArray(window.world_names)) {
-        availableWorldBooks = window.world_names;
+    if (store.availableWorldBooks.length === 0 && window.world_names && Array.isArray(window.world_names)) {
+        store.availableWorldBooks = window.world_names;
     }
-    if (availableWorldBooks.length === 0) {
+    if (store.availableWorldBooks.length === 0) {
         try {
             const r = await fetch('/api/worldinfo/get', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({}) });
-            if (r.ok) { const d = await r.json(); availableWorldBooks = d.world_names || d; }
+            if (r.ok) { const d = await r.json(); store.availableWorldBooks = d.world_names || d; }
         } catch (e) { }
     }
-    availableWorldBooks = [...new Set(availableWorldBooks)].filter(x => x).sort();
+    store.availableWorldBooks = [...new Set(store.availableWorldBooks)].filter(x => x).sort();
 }
 
 async function getContextWorldBooks(extras = []) {
@@ -1799,8 +1798,8 @@ function autoBindGreetings() {
                         $('#pw-greetings-select').val(swipeId);
                         
                         // [Fix 8] Set value but keep collapsed by default
-                        if (currentGreetingsList[swipeId]) {
-                            $('#pw-greetings-preview').val(currentGreetingsList[swipeId].content).hide();
+                        if (store.currentGreetingsList[swipeId]) {
+                            $('#pw-greetings-preview').val(store.currentGreetingsList[swipeId].content).hide();
                             $('#pw-greetings-toggle-bar').show().html('<i class="fa-solid fa-angle-down"></i> 展开预览');
                         }
                         
@@ -1819,21 +1818,21 @@ function autoBindGreetings() {
 // ============================================================================
 
 function renderAvatarStrip() {
-    const isNpc = uiStateCache.generationMode === 'npc';
+    const isNpc = store.uiStateCache.generationMode === 'npc';
     const $strip = $('#pw-avatar-strip');
     if (!$strip.length) return;
     $strip.empty();
     const items = [];
-    if (!isNpc && currentUserAvatarBase64) {
-        items.push({ id: '__user_current__', base64: currentUserAvatarBase64, name: 'User 当前头像' });
+    if (!isNpc && store.currentUserAvatarBase64) {
+        items.push({ id: '__user_current__', base64: store.currentUserAvatarBase64, name: 'User 当前头像' });
     }
     const tagFilter = isNpc ? 'npc' : 'user';
-    avatarImagesCache.filter(img => img.tags && img.tags.includes(tagFilter)).forEach(img => items.push(img));
+    store.avatarImagesCache.filter(img => img.tags && img.tags.includes(tagFilter)).forEach(img => items.push(img));
     if (items.length === 0) {
         $strip.html('<span style="font-size:0.75em; opacity:0.4; white-space:nowrap;">暂无图片，前往参考页上传</span>');
         return;
     }
-    const sel = uiStateCache.avatarRef.selectedIds || [];
+    const sel = store.uiStateCache.avatarRef.selectedIds || [];
     items.forEach(item => {
         const isSelected = sel.includes(item.id);
         const $img = $(`<img class="pw-avatar-strip-img ${isSelected ? 'selected' : ''}" data-avatar-id="${item.id}" src="${item.base64}" title="${item.name || ''}">`);
@@ -1845,11 +1844,11 @@ function renderAvatarMgmt() {
     const $list = $('#pw-avatar-mgmt-grid');
     if (!$list.length) return;
     $list.empty();
-    if (avatarImagesCache.length === 0) {
+    if (store.avatarImagesCache.length === 0) {
         $list.html('<div style="font-size:0.8em; opacity:0.4; padding:8px; text-align:center;">暂无上传图片</div>');
         return;
     }
-    avatarImagesCache.forEach(img => {
+    store.avatarImagesCache.forEach(img => {
         const hasUser = img.tags && img.tags.includes('user');
         const hasNpc = img.tags && img.tags.includes('npc');
         const $item = $(`
@@ -1875,7 +1874,7 @@ async function openCreatorPopup() {
 
     // Pre-load current user avatar in background
     fetchAvatarAsBase64().then(b64 => {
-        currentUserAvatarBase64 = b64;
+        store.currentUserAvatarBase64 = b64;
         if ($('#pw-avatar-strip').length) renderAvatarStrip();
     });
 
@@ -1908,34 +1907,34 @@ async function openCreatorPopup() {
     if (!currentName) currentName = $('h5#your_name').text().trim();
     if (!currentName) currentName = context.powerUserSettings?.persona_selected || "User";
 
-    const isNpc = uiStateCache.generationMode === 'npc';
-    const chatHistEnabled = uiStateCache.chatHistory && uiStateCache.chatHistory.enabled;
-    const activeData = isNpc ? npcContext : userContext;
+    const isNpc = store.uiStateCache.generationMode === 'npc';
+    const chatHistEnabled = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
+    const activeData = isNpc ? store.npcContext : store.userContext;
     
     const charName = getContext().characters[getContext().characterId]?.name || "None";
     
     const headerTitle = `${TEXT.PANEL_TITLE}<span class="pw-header-subtitle">User:${currentName} & Char:${charName}</span>`;
 
-    const chipsDisplay = uiStateCache.templateExpanded ? 'flex' : 'none';
-    const chipsIcon = uiStateCache.templateExpanded ? 'fa-angle-up' : 'fa-angle-down';
+    const chipsDisplay = store.uiStateCache.templateExpanded ? 'flex' : 'none';
+    const chipsIcon = store.uiStateCache.templateExpanded ? 'fa-angle-up' : 'fa-angle-down';
 
     // [Fix 10] Generate Preset Options
     let presetOptionsHtml = `
-        <option value="current" ${uiStateCache.generationPreset === 'current' ? 'selected' : ''}>跟随酒馆预设 (Default)</option>
-        <option value="pure" ${uiStateCache.generationPreset === 'pure' ? 'selected' : ''}>✨ 纯净模式 (Pure Mode)</option>
+        <option value="current" ${store.uiStateCache.generationPreset === 'current' ? 'selected' : ''}>跟随酒馆预设 (Default)</option>
+        <option value="pure" ${store.uiStateCache.generationPreset === 'pure' ? 'selected' : ''}>✨ 纯净模式 (Pure Mode)</option>
     `;
     if (window.TavernHelper && typeof window.TavernHelper.getPresetNames === 'function') {
         const presets = window.TavernHelper.getPresetNames().sort();
         presets.forEach(p => {
             if (p !== 'in_use') {
-                const sel = uiStateCache.generationPreset === p ? 'selected' : '';
+                const sel = store.uiStateCache.generationPreset === p ? 'selected' : '';
                 presetOptionsHtml += `<option value="${p}" ${sel}>[预设] ${p}</option>`;
             }
         });
     }
 
     // [Fix 14] Initial Hint Text
-    const initialHint = getPresetHintText(uiStateCache.generationPreset);
+    const initialHint = getPresetHintText(store.uiStateCache.generationPreset);
 
     let initialProfileName = "默认配置 1";
     if (localConfig.apiProfiles && localConfig.apiProfiles.length > 0) {
@@ -2003,8 +2002,8 @@ async function openCreatorPopup() {
                 </div>
             </div>
 
-            <div class="pw-context-row ${(uiStateCache.avatarRef.selectedIds || []).length > 0 ? 'active' : ''}" id="pw-avatar-ref-row">
-                <span class="pw-context-row-label">形象参考<span id="pw-avatar-count-badge" class="pw-context-badge ${(uiStateCache.avatarRef.selectedIds || []).length > 0 ? 'visible' : ''}">${(uiStateCache.avatarRef.selectedIds || []).length || ''}</span></span>
+            <div class="pw-context-row ${(store.uiStateCache.avatarRef.selectedIds || []).length > 0 ? 'active' : ''}" id="pw-avatar-ref-row">
+                <span class="pw-context-row-label">形象参考<span id="pw-avatar-count-badge" class="pw-context-badge ${(store.uiStateCache.avatarRef.selectedIds || []).length > 0 ? 'visible' : ''}">${(store.uiStateCache.avatarRef.selectedIds || []).length || ''}</span></span>
                 <div id="pw-avatar-strip" class="pw-avatar-strip"></div>
                 <span id="pw-avatar-add-btn" class="pw-avatar-add-btn" title="管理头像"><i class="fa-solid fa-plus"></i></span>
             </div>
@@ -2013,7 +2012,7 @@ async function openCreatorPopup() {
                 <input type="checkbox" id="pw-chat-infer-main-toggle" ${chatHistEnabled ? 'checked' : ''} style="display:none;">
                 <span class="pw-context-row-label pw-chat-toggle-zone" style="cursor:pointer;">聊天记录注入</span>
                 <span class="pw-context-row-right pw-chat-settings-zone">
-                    <span id="pw-chat-infer-summary" class="pw-context-row-hint">${chatHistEnabled ? (uiStateCache.chatHistory.preset === 'all' ? '全部' : '最近' + (uiStateCache.chatHistory.preset || '10') + '条') : '未启用'}</span>
+                    <span id="pw-chat-infer-summary" class="pw-context-row-hint">${chatHistEnabled ? (store.uiStateCache.chatHistory.preset === 'all' ? '全部' : '最近' + (store.uiStateCache.chatHistory.preset || '10') + '条') : '未启用'}</span>
                     <span id="pw-chat-token-badge" class="pw-chat-token-badge" style="display:none;"></span>
                 </span>
             </div>
@@ -2284,7 +2283,7 @@ async function openCreatorPopup() {
     renderTemplateChips();
     loadAvailableWorldBooks().then(() => {
         renderWiBooks();
-        const options = availableWorldBooks.length > 0 ? availableWorldBooks.map(b => `<option value="${b}">${b}</option>`).join('') : `<option disabled>未找到世界书</option>`;
+        const options = store.availableWorldBooks.length > 0 ? store.availableWorldBooks.map(b => `<option value="${b}">${b}</option>`).join('') : `<option disabled>未找到世界书</option>`;
         $('#pw-wi-select').html(`<option value="">-- 添加参考/目标世界书 --</option>${options}`);
     });
 
@@ -2302,7 +2301,7 @@ async function openCreatorPopup() {
     }
 
     // Restore chat history UI state
-    const chatConf = uiStateCache.chatHistory || {};
+    const chatConf = store.uiStateCache.chatHistory || {};
     if (chatConf.preset) $('#pw-chat-preset').val(chatConf.preset);
     if (chatConf.preset === 'custom') $('#pw-chat-custom-range').css('display', 'flex');
     if (chatConf.floorFrom) $('#pw-chat-floor-from').val(chatConf.floorFrom);
@@ -2378,10 +2377,8 @@ function computeDiffBlocks(oldText, newText) {
     return blocks;
 }
 
-let currentDiffBlocks = [];
-
 function renderDiffComparison(oldText, newText) {
-    currentDiffBlocks = computeDiffBlocks(oldText, newText);
+    store.currentDiffBlocks = computeDiffBlocks(oldText, newText);
     renderInlineDiff();
     $('#pw-diff-merge-list').removeClass('pw-diff-mode-new pw-diff-mode-old pw-diff-mode-final').addClass('pw-diff-mode-all');
     $('.pw-diff-mode-btn').removeClass('active');
@@ -2390,7 +2387,7 @@ function renderDiffComparison(oldText, newText) {
 
 function renderInlineDiff() {
     let html = '';
-    currentDiffBlocks.forEach((block, index) => {
+    store.currentDiffBlocks.forEach((block, index) => {
         if (block.type === 'equal') {
             html += `<span class="pw-idiff-equal" data-idx="${index}">${_esc(block.value)}</span>`;
         } else {
@@ -2410,13 +2407,13 @@ function renderInlineDiff() {
     const $container = $('#pw-diff-merge-list');
     $container.attr('contenteditable', 'true').html(html);
 
-    let changeCount = currentDiffBlocks.filter(b => b.type === 'diff').length;
+    let changeCount = store.currentDiffBlocks.filter(b => b.type === 'diff').length;
     if (changeCount === 0) toastr.info("没有检测到内容变化");
 }
 
 function assembleDiffResult() {
     let text = '';
-    currentDiffBlocks.forEach(block => {
+    store.currentDiffBlocks.forEach(block => {
         if (block.type === 'equal') {
             text += block.value;
         } else if (block.active === 'old') {
@@ -2534,7 +2531,7 @@ function bindEvents() {
     // --- Mode Switcher (Pill Style - Isolated Data) ---
     $(document).on('click.pw', '.pw-mode-item', function() {
         const mode = $(this).data('mode');
-        if (mode === uiStateCache.generationMode) return;
+        if (mode === store.uiStateCache.generationMode) return;
         
         // 1. Save current data to context object
         const curReq = $('#pw-request').val();
@@ -2542,20 +2539,20 @@ function bindEvents() {
         const curTmpl = $('#pw-template-text').val();
         const hasRes = $('#pw-result-area').is(':visible');
 
-        if (uiStateCache.generationMode === 'npc') {
-            npcContext = { template: curTmpl, request: curReq, result: curRes, hasResult: hasRes };
+        if (store.uiStateCache.generationMode === 'npc') {
+            store.npcContext = { template: curTmpl, request: curReq, result: curRes, hasResult: hasRes };
         } else {
-            userContext = { template: curTmpl, request: curReq, result: curRes, hasResult: hasRes };
+            store.userContext = { template: curTmpl, request: curReq, result: curRes, hasResult: hasRes };
         }
         
         // 2. Switch Mode
         $('.pw-mode-item').removeClass('active');
         $(this).addClass('active');
-        uiStateCache.generationMode = mode;
+        store.uiStateCache.generationMode = mode;
         saveData();
 
         // 3. Load target data
-        const targetData = mode === 'npc' ? npcContext : userContext;
+        const targetData = mode === 'npc' ? store.npcContext : store.userContext;
         $('#pw-request').val(targetData.request);
         $('#pw-result-text').val(targetData.result);
         $('#pw-template-text').val(targetData.template);
@@ -2571,8 +2568,8 @@ function bindEvents() {
         renderTemplateChips();
 
         // Reset template editing state on mode switch
-        if (isEditingTemplate) {
-            isEditingTemplate = false;
+        if (store.isEditingTemplate) {
+            store.isEditingTemplate = false;
             $('#pw-template-editor').hide();
             $('#pw-template-chips').css('display', 'flex');
             $('#pw-toggle-edit-template').text("编辑模版").removeClass('editing');
@@ -2598,17 +2595,17 @@ function bindEvents() {
     // [Fix 10] Preset Select Change Logic
     $(document).on('change.pw', '#pw-preset-select', function() {
         const val = $(this).val();
-        uiStateCache.generationPreset = val;
+        store.uiStateCache.generationPreset = val;
         saveData();
         // [Fix 14] Update Hint on Change
         $('#pw-preset-hint').text(getPresetHintText(val));
     });
 
-    $(document).on('click.pw', '#pw-hist-prev', () => { if (historyPage > 1) { historyPage--; renderHistoryList(); } });
-    $(document).on('click.pw', '#pw-hist-next', () => { historyPage++; renderHistoryList(); });
+    $(document).on('click.pw', '#pw-hist-prev', () => { if (store.historyPage > 1) { store.historyPage--; renderHistoryList(); } });
+    $(document).on('click.pw', '#pw-hist-next', () => { store.historyPage++; renderHistoryList(); });
 
     $(document).on('change.pw', '#pw-hist-filter-type, #pw-hist-filter-char', function() {
-        historyPage = 1;
+        store.historyPage = 1;
         renderHistoryList();
     });
 
@@ -2620,8 +2617,8 @@ function bindEvents() {
         if (idx === "") {
             $preview.slideUp(200);
             $toggleBtn.hide();
-        } else if (currentGreetingsList[idx]) {
-            $preview.val(currentGreetingsList[idx].content);
+        } else if (store.currentGreetingsList[idx]) {
+            $preview.val(store.currentGreetingsList[idx].content);
             $preview.slideDown(200); // Slide direct
             $toggleBtn.show().html('<i class="fa-solid fa-angle-up"></i> 收起预览');
         }
@@ -2651,17 +2648,17 @@ function bindEvents() {
         $('.pw-view').removeClass('active');
         $(`#pw-view-${$(this).data('tab')}`).addClass('active');
         if ($(this).data('tab') === 'history') {
-            historyPage = 1; // Reset to page 1
+            store.historyPage = 1; // Reset to page 1
             renderHistoryList();
         }
     });
 
     $(document).on('click.pw', '#pw-toggle-edit-template', () => {
-        isEditingTemplate = !isEditingTemplate;
+        store.isEditingTemplate = !store.isEditingTemplate;
         const tmpl = getCurrentTemplate();
-        const isNpc = uiStateCache.generationMode === 'npc';
+        const isNpc = store.uiStateCache.generationMode === 'npc';
         
-        if (isEditingTemplate) {
+        if (store.isEditingTemplate) {
             $('#pw-template-text').val(tmpl);
             $('#pw-template-chips').hide();
             $('#pw-template-editor').css('display', 'flex');
@@ -2684,17 +2681,17 @@ function bindEvents() {
     });
 
     $(document).on('click.pw', '#pw-template-block-header', function() {
-        if (isEditingTemplate) return; 
+        if (store.isEditingTemplate) return; 
         const $chips = $('#pw-template-chips');
         const $icon = $(this).find('i');
         if ($chips.is(':visible')) {
             $chips.slideUp();
             $icon.removeClass('fa-angle-up').addClass('fa-angle-down');
-            uiStateCache.templateExpanded = false;
+            store.uiStateCache.templateExpanded = false;
         } else {
             $chips.slideDown().css('display', 'flex');
             $icon.removeClass('fa-angle-down').addClass('fa-angle-up');
-            uiStateCache.templateExpanded = true;
+            store.uiStateCache.templateExpanded = true;
         }
         saveData(); 
     });
@@ -2703,33 +2700,33 @@ function bindEvents() {
     $(document).on('click.pw', '#pw-load-main-template', function() {
         if(confirm("确定要使用默认的 User 主模版吗？这将覆盖当前编辑器内容。")) {
             $('#pw-template-text').val(defaultYamlTemplate);
-            if (uiStateCache.generationMode === 'npc') npcContext.template = defaultYamlTemplate;
-            else userContext.template = defaultYamlTemplate;
+            if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = defaultYamlTemplate;
+            else store.userContext.template = defaultYamlTemplate;
             saveData();
-            if(!isEditingTemplate) renderTemplateChips();
+            if(!store.isEditingTemplate) renderTemplateChips();
             toastr.success("已载入 User 主模版");
         }
     });
 
     // Reset Template Small Button
     $(document).on('click.pw', '#pw-reset-template-small', function() {
-        const isNpc = uiStateCache.generationMode === 'npc';
+        const isNpc = store.uiStateCache.generationMode === 'npc';
         const targetName = isNpc ? "NPC" : "User";
         if(confirm(`确定要恢复为默认的 ${targetName} 模版吗？`)) {
             const fallbackT = isNpc ? defaultNpcTemplate : defaultYamlTemplate;
             $('#pw-template-text').val(fallbackT);
-            if (isNpc) npcContext.template = fallbackT;
-            else userContext.template = fallbackT;
+            if (isNpc) store.npcContext.template = fallbackT;
+            else store.userContext.template = fallbackT;
             saveData();
-            if(!isEditingTemplate) renderTemplateChips();
+            if(!store.isEditingTemplate) renderTemplateChips();
             toastr.success(`已恢复默认 ${targetName} 模版`);
         }
     });
 
     // (旧的 #pw-gen-template-smart 已移除，模板生成统一走 #pw-btn-gen)
     $(document).on('click.pw', '#pw-gen-template-smart-DISABLED', async function() {
-        if (isProcessing) return;
-        isProcessing = true;
+        if (store.isProcessing) return;
+        store.isProcessing = true;
         const $btn = $(this);
         const originalText = $btn.html();
         $btn.html('<i class="fas fa-spinner fa-spin"></i> 生成中...');
@@ -2744,7 +2741,7 @@ function bindEvents() {
                 const wantGeneric = confirm("当前未检测到关联的角色卡或世界书信息。\n\n是否要生成通用模版？");
                 
                 if (!wantGeneric) {
-                    isProcessing = false;
+                    store.isProcessing = false;
                     $btn.html(originalText);
                     return;
                 }
@@ -2752,17 +2749,17 @@ function bindEvents() {
                 const useDefault = confirm("请选择模版来源：\n\n点击【确定】使用内置默认模版（推荐）\n点击【取消】生成全新的通用模版");
 
                 if (useDefault) {
-                    const isNpc = uiStateCache.generationMode === 'npc';
+                    const isNpc = store.uiStateCache.generationMode === 'npc';
                     const fallbackT = isNpc ? defaultNpcTemplate : defaultYamlTemplate;
                     
                     $('#pw-template-text').val(fallbackT);
-                    if (isNpc) npcContext.template = fallbackT;
-                    else userContext.template = fallbackT;
+                    if (isNpc) store.npcContext.template = fallbackT;
+                    else store.userContext.template = fallbackT;
                     saveData();
                     renderTemplateChips();
                     toastr.success(`已恢复默认${isNpc ? 'NPC' : 'User'}模板`);
                     
-                    isProcessing = false;
+                    store.isProcessing = false;
                     $btn.html(originalText);
                     return; 
                 }
@@ -2782,13 +2779,13 @@ function bindEvents() {
             if (generatedTemplate) {
                 $('#pw-template-text').val(generatedTemplate);
                 
-                if (uiStateCache.generationMode === 'npc') npcContext.template = generatedTemplate;
-                else userContext.template = generatedTemplate;
+                if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = generatedTemplate;
+                else store.userContext.template = generatedTemplate;
                 saveData();
 
                 renderTemplateChips();
                 
-                if (!isEditingTemplate) {
+                if (!store.isEditingTemplate) {
                     $('#pw-toggle-edit-template').click();
                 }
                 toastr.success("模版生成成功！请点击“保存模版”确认修改。");
@@ -2798,15 +2795,15 @@ function bindEvents() {
             toastr.error("模版生成失败: " + e.message);
         } finally {
             $btn.html(originalText);
-            isProcessing = false;
+            store.isProcessing = false;
         }
     });
 
     $(document).on('click.pw', '#pw-save-template', () => {
         const val = $('#pw-template-text').val();
         
-        if (uiStateCache.generationMode === 'npc') npcContext.template = val;
-        else userContext.template = val;
+        if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = val;
+        else store.userContext.template = val;
         saveData();
         
         saveHistory({ 
@@ -2820,13 +2817,13 @@ function bindEvents() {
         });
 
         renderTemplateChips();
-        isEditingTemplate = false;
+        store.isEditingTemplate = false;
         $('#pw-template-editor').hide();
         $('#pw-template-chips').css('display', 'flex');
         $('#pw-toggle-edit-template').text("编辑模版").removeClass('editing');
         $('#pw-template-block-header').find('i').show();
         $('#pw-btn-apply-template').hide();
-        const isNpc = uiStateCache.generationMode === 'npc';
+        const isNpc = store.uiStateCache.generationMode === 'npc';
         $('#pw-request').attr('placeholder', '在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...');
         $('#pw-btn-gen').html(`<i class="fa-solid fa-wand-magic-sparkles"></i> ${isNpc ? '生成 NPC 设定' : '生成 User 设定'}`);
         toastr.success("模版已更新并保存至记录");
@@ -2840,8 +2837,8 @@ function bindEvents() {
             return;
         }
         $('#pw-template-text').val(resultText);
-        if (uiStateCache.generationMode === 'npc') npcContext.template = resultText;
-        else userContext.template = resultText;
+        if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = resultText;
+        else store.userContext.template = resultText;
         saveData();
         renderTemplateChips();
         toastr.success("已将结果应用到模版编辑器，请确认后点击「保存模版」");
@@ -2918,14 +2915,14 @@ function bindEvents() {
             const curRes = $('#pw-result-text').val();
             const hasRes = $('#pw-result-area').is(':visible');
 
-            if (uiStateCache.generationMode === 'npc') {
-                npcContext.request = curReq;
-                npcContext.result = curRes;
-                npcContext.hasResult = hasRes;
+            if (store.uiStateCache.generationMode === 'npc') {
+                store.npcContext.request = curReq;
+                store.npcContext.result = curRes;
+                store.npcContext.hasResult = hasRes;
             } else {
-                userContext.request = curReq;
-                userContext.result = curRes;
-                userContext.hasResult = hasRes;
+                store.userContext.request = curReq;
+                store.userContext.result = curRes;
+                store.userContext.hasResult = hasRes;
             }
 
             saveData(); 
@@ -3018,7 +3015,7 @@ function bindEvents() {
         if (!$('#pw-diff-merge-list').hasClass('pw-diff-mode-all')) return;
         if ($(this).hasClass('active')) return;
         const idx = $(this).data('idx');
-        currentDiffBlocks[idx].active = 'old';
+        store.currentDiffBlocks[idx].active = 'old';
         $(this).addClass('active').removeClass('inactive').attr('contenteditable', 'true');
         $(this).siblings('.pw-idiff-new').addClass('inactive').removeClass('active').attr('contenteditable', 'false');
     });
@@ -3026,24 +3023,24 @@ function bindEvents() {
         if (!$('#pw-diff-merge-list').hasClass('pw-diff-mode-all')) return;
         if ($(this).hasClass('active')) return;
         const idx = $(this).data('idx');
-        currentDiffBlocks[idx].active = 'new';
+        store.currentDiffBlocks[idx].active = 'new';
         $(this).addClass('active').removeClass('inactive').attr('contenteditable', 'true');
         $(this).siblings('.pw-idiff-old').addClass('inactive').removeClass('active').attr('contenteditable', 'false');
     });
 
-    // 容器级 input：跨 span 编辑后统一回写到 currentDiffBlocks
+    // 容器级 input：跨 span 编辑后统一回写到 store.currentDiffBlocks
     $(document).on('input.pw', '#pw-diff-merge-list', function () {
         $(this).find('.pw-idiff-equal').each(function () {
             const idx = $(this).data('idx');
-            if (idx !== undefined && currentDiffBlocks[idx]) currentDiffBlocks[idx].value = $(this).text();
+            if (idx !== undefined && store.currentDiffBlocks[idx]) store.currentDiffBlocks[idx].value = $(this).text();
         });
         $(this).find('.pw-idiff-old.active').each(function () {
             const idx = $(this).data('idx');
-            if (idx !== undefined && currentDiffBlocks[idx]) currentDiffBlocks[idx].oldText = $(this).text();
+            if (idx !== undefined && store.currentDiffBlocks[idx]) store.currentDiffBlocks[idx].oldText = $(this).text();
         });
         $(this).find('.pw-idiff-new.active').each(function () {
             const idx = $(this).data('idx');
-            if (idx !== undefined && currentDiffBlocks[idx]) currentDiffBlocks[idx].newText = $(this).text();
+            if (idx !== undefined && store.currentDiffBlocks[idx]) store.currentDiffBlocks[idx].newText = $(this).text();
         });
     });
 
@@ -3051,20 +3048,20 @@ function bindEvents() {
    // ================== 1. 润色按钮逻辑 (主界面) ==================
     $(document).on('click.pw', '#pw-btn-refine', async function (e) {
         e.preventDefault();
-        if (isProcessing) return;
-        isProcessing = true;
+        if (store.isProcessing) return;
+        store.isProcessing = true;
 
         const refineReq = $('#pw-refine-input').val();
-        const chatInferOn = uiStateCache.chatHistory && uiStateCache.chatHistory.enabled && !isEditingTemplate;
+        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled && !store.isEditingTemplate;
         if (!refineReq && !chatInferOn) {
             toastr.warning("请输入润色意见");
-            isProcessing = false;
+            store.isProcessing = false;
             return;
         }
         
-        lastRefineRequest = refineReq || (chatInferOn ? '[基于聊天记录更新]' : '');
+        store.lastRefineRequest = refineReq || (chatInferOn ? '[基于聊天记录更新]' : '');
 
-        if(!promptsCache.personaGen) loadData();
+        if(!store.promptsCache.personaGen) loadData();
 
         const oldText = $('#pw-result-text').val();
         const $btn = $(this).find('i').removeClass('fa-magic fa-rotate').addClass('fa-spinner fa-spin');
@@ -3074,7 +3071,7 @@ function bindEvents() {
         try {
             const contextData = await collectContextData();
             const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const isTemplateRefine = isEditingTemplate;
+            const isTemplateRefine = store.isEditingTemplate;
             const config = {
                 mode: 'refine', 
                 request: refineReq, 
@@ -3100,20 +3097,20 @@ function bindEvents() {
             toastr.error((chatInferOn ? "更新" : "润色") + "失败: " + e.message); 
         } finally { 
             $btn.removeClass('fa-spinner fa-spin').addClass(chatInferOn ? 'fa-rotate' : 'fa-magic');
-            isProcessing = false;
+            store.isProcessing = false;
         }
     });
 
     // ================== 2. 重 Roll 按钮逻辑 (Diff界面内) ==================
     $(document).on('click.pw', '#pw-diff-reroll', async function (e) {
         e.preventDefault();
-        if (isProcessing) return;
-        if (!lastRefineRequest) {
+        if (store.isProcessing) return;
+        if (!store.lastRefineRequest) {
             toastr.warning("未找到上一次的润色要求");
             return;
         }
 
-        isProcessing = true;
+        store.isProcessing = true;
         const $btn = $(this);
         const originalHtml = $btn.html();
         $btn.html('<i class="fa-solid fa-spinner fa-spin"></i> 生成中...');
@@ -3124,10 +3121,10 @@ function bindEvents() {
         try {
             const contextData = await collectContextData();
             const modelVal = $('#pw-api-source').val() === 'independent' ? $('#pw-api-model-select').val() : null;
-            const isTemplateRefine = isEditingTemplate;
+            const isTemplateRefine = store.isEditingTemplate;
             const config = {
                 mode: 'refine', 
-                request: lastRefineRequest,
+                request: store.lastRefineRequest,
                 currentText: oldText, 
                 wiText: contextData.wi,           
                 greetingsText: isTemplateRefine ? '' : contextData.greetings,
@@ -3149,7 +3146,7 @@ function bindEvents() {
             toastr.error("重Roll失败: " + e.message);
         } finally {
             $btn.html(originalHtml);
-            isProcessing = false;
+            store.isProcessing = false;
         }
     });
 
@@ -3167,16 +3164,16 @@ function bindEvents() {
     $(document).on('click.pw', '#pw-btn-gen', async function (e) {
         e.preventDefault();
         
-        if (isProcessing) return;
-        isProcessing = true;
+        if (store.isProcessing) return;
+        store.isProcessing = true;
 
-        const isTemplateGen = isEditingTemplate;
-        const chatInferOn = uiStateCache.chatHistory && uiStateCache.chatHistory.enabled && !isTemplateGen;
+        const isTemplateGen = store.isEditingTemplate;
+        const chatInferOn = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled && !isTemplateGen;
         console.log(`[PW] Gen Clicked (template=${isTemplateGen}, chatInfer=${chatInferOn})`);
         const req = $('#pw-request').val();
         if (!req && !isTemplateGen && !chatInferOn) {
             toastr.warning("请输入要求");
-            isProcessing = false;
+            store.isProcessing = false;
             return;
         }
         const $btn = $(this);
@@ -3215,7 +3212,7 @@ function bindEvents() {
             console.error(e);
             toastr.error(e.message); 
         } finally { 
-            const isNpc = uiStateCache.generationMode === 'npc';
+            const isNpc = store.uiStateCache.generationMode === 'npc';
             if (isTemplateGen) {
                 $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成模版');
             } else if (chatInferOn) {
@@ -3223,14 +3220,14 @@ function bindEvents() {
             } else {
                 $btn.prop('disabled', false).html(isNpc ? '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 NPC 设定' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
             }
-            isProcessing = false;
+            store.isProcessing = false;
         }
     });
 
     $(document).on('click.pw', '#pw-load-overlay-close', () => $('#pw-load-overlay').animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); }));
 
     $(document).on('click.pw', '#pw-btn-load-current', async function() {
-        const isNpc = uiStateCache.generationMode === 'npc';
+        const isNpc = store.uiStateCache.generationMode === 'npc';
         const $overlay = $('#pw-load-overlay');
         const $content = $('#pw-load-overlay-content');
 
@@ -3392,7 +3389,7 @@ function bindEvents() {
             const newVal = $input.val();
             $display.text(newVal).show(); $input.hide();
             const index = $header.closest('.pw-history-item').find('.pw-hist-action-btn.del').data('index');
-            if (historyCache[index]) { historyCache[index].title = newVal; saveData(); }
+            if (store.historyCache[index]) { store.historyCache[index].title = newVal; saveData(); }
             $(document).off('click.pw-hist-blur');
         };
         
@@ -3500,7 +3497,7 @@ function bindEvents() {
 
     // === Chat History Reference Events ===
     const refreshChatTokenEstimate = async () => {
-        if (!uiStateCache.chatHistory.enabled) { $('#pw-chat-token-badge').hide(); return; }
+        if (!store.uiStateCache.chatHistory.enabled) { $('#pw-chat-token-badge').hide(); return; }
         const result = await fetchChatHistoryFiltered();
         const tokens = result.tokenEstimate;
         const $badge = $('#pw-chat-token-badge');
@@ -3520,10 +3517,10 @@ function bindEvents() {
 
     $(document).on('change.pw', '#pw-chat-infer-main-toggle', function () {
         const enabled = $(this).prop('checked');
-        uiStateCache.chatHistory.enabled = enabled;
+        store.uiStateCache.chatHistory.enabled = enabled;
         $('#pw-chat-infer-row').toggleClass('active', enabled);
         if (enabled) {
-            if (!uiStateCache.chatHistory.preset) uiStateCache.chatHistory.preset = '10';
+            if (!store.uiStateCache.chatHistory.preset) store.uiStateCache.chatHistory.preset = '10';
             refreshChatTokenEstimate();
             renderChatTags();
         } else {
@@ -3560,8 +3557,8 @@ function bindEvents() {
 
     $(document).on('click.pw', '.pw-avatar-strip-img', function () {
         const id = $(this).data('avatar-id');
-        if (!uiStateCache.avatarRef.selectedIds) uiStateCache.avatarRef.selectedIds = [];
-        const sel = uiStateCache.avatarRef.selectedIds;
+        if (!store.uiStateCache.avatarRef.selectedIds) store.uiStateCache.avatarRef.selectedIds = [];
+        const sel = store.uiStateCache.avatarRef.selectedIds;
         const idx = sel.indexOf(id);
         if (idx >= 0) { sel.splice(idx, 1); $(this).removeClass('selected'); }
         else { sel.push(id); $(this).addClass('selected'); }
@@ -3586,7 +3583,7 @@ function bindEvents() {
                     reader.readAsDataURL(file);
                 });
                 const base64 = await compressImage(rawBase64, 512, 0.7);
-                avatarImagesCache.push({
+                store.avatarImagesCache.push({
                     id: generateId(),
                     name: file.name.replace(/\.[^.]+$/, ''),
                     base64: base64,
@@ -3607,7 +3604,7 @@ function bindEvents() {
         const $card = $(this).closest('.pw-avatar-card');
         const imgId = $card.data('img-id');
         const tag = $(this).data('tag');
-        const img = avatarImagesCache.find(i => i.id === imgId);
+        const img = store.avatarImagesCache.find(i => i.id === imgId);
         if (!img) return;
         if (!img.tags) img.tags = [];
         const idx = img.tags.indexOf(tag);
@@ -3620,10 +3617,10 @@ function bindEvents() {
     $(document).on('click.pw', '.pw-avatar-card-del', function () {
         const $card = $(this).closest('.pw-avatar-card');
         const imgId = $card.data('img-id');
-        const idx = avatarImagesCache.findIndex(i => i.id === imgId);
+        const idx = store.avatarImagesCache.findIndex(i => i.id === imgId);
         if (idx >= 0) {
-            avatarImagesCache.splice(idx, 1);
-            uiStateCache.avatarRef.selectedIds = (uiStateCache.avatarRef.selectedIds || []).filter(id => id !== imgId);
+            store.avatarImagesCache.splice(idx, 1);
+            store.uiStateCache.avatarRef.selectedIds = (store.uiStateCache.avatarRef.selectedIds || []).filter(id => id !== imgId);
             saveAvatarImages();
             saveCurrentState();
             $card.fadeOut(200, () => { $card.remove(); renderAvatarStrip(); });
@@ -3633,7 +3630,7 @@ function bindEvents() {
     $(document).on('click.pw', '.pw-avatar-card-name', function () {
         const $card = $(this).closest('.pw-avatar-card');
         const imgId = $card.data('img-id');
-        const img = avatarImagesCache.find(i => i.id === imgId);
+        const img = store.avatarImagesCache.find(i => i.id === imgId);
         if (!img) return;
         const currentName = img.name || '';
         const $input = $('<input type="text" class="pw-input">').val(currentName).css({ fontSize: '0.78em', padding: '2px 4px', width: '100%', textAlign: 'center' });
@@ -3675,7 +3672,7 @@ function bindEvents() {
     renderAvatarStrip();
 
     function updateChatInferSummary() {
-        const conf = uiStateCache.chatHistory || {};
+        const conf = store.uiStateCache.chatHistory || {};
         const enabled = conf.enabled;
         const preset = conf.preset || '10';
         let text = '未启用';
@@ -3693,9 +3690,9 @@ function bindEvents() {
 
     $(document).on('change.pw', '#pw-chat-preset', function () {
         const val = $(this).val();
-        uiStateCache.chatHistory.preset = val;
+        store.uiStateCache.chatHistory.preset = val;
         $('#pw-chat-custom-range').css('display', val === 'custom' ? 'flex' : 'none');
-        if (val !== 'custom') { uiStateCache.chatHistory.floorFrom = ''; uiStateCache.chatHistory.floorTo = ''; }
+        if (val !== 'custom') { store.uiStateCache.chatHistory.floorFrom = ''; store.uiStateCache.chatHistory.floorTo = ''; }
         refreshChatTokenEstimate();
         updateChatInferBadge();
         updateChatInferSummary();
@@ -3703,8 +3700,8 @@ function bindEvents() {
     });
 
     $(document).on('change.pw', '#pw-chat-floor-from, #pw-chat-floor-to', function () {
-        uiStateCache.chatHistory.floorFrom = $('#pw-chat-floor-from').val();
-        uiStateCache.chatHistory.floorTo = $('#pw-chat-floor-to').val();
+        store.uiStateCache.chatHistory.floorFrom = $('#pw-chat-floor-from').val();
+        store.uiStateCache.chatHistory.floorTo = $('#pw-chat-floor-to').val();
         refreshChatTokenEstimate();
         updateChatInferSummary();
         saveCurrentState();
@@ -3721,7 +3718,7 @@ function bindEvents() {
 
     const renderChatTags = () => {
         const $area = $('#pw-chat-active-tags').empty();
-        const conf = uiStateCache.chatHistory;
+        const conf = store.uiStateCache.chatHistory;
         const allTags = [...(conf.excludeTags || []).map(t => ({name: t, mode: 'exclude'})), ...(conf.includeTags || []).map(t => ({name: t, mode: 'include'}))];
         allTags.forEach(t => {
             const cls = t.mode === 'include' ? 'pw-chat-tag-include' : 'pw-chat-tag-exclude';
@@ -3751,7 +3748,7 @@ function bindEvents() {
         if (e.which !== 13) return;
         const val = $(this).val().trim();
         if (!val) return;
-        const conf = uiStateCache.chatHistory;
+        const conf = store.uiStateCache.chatHistory;
         if (!conf.excludeTags.includes(val) && !conf.includeTags.includes(val)) {
             conf.excludeTags.push(val);
             saveCurrentState(); renderChatTags(); refreshChatTokenEstimate();
@@ -3764,7 +3761,7 @@ function bindEvents() {
         const $res = $('#pw-chat-scan-results').empty().css('display', 'flex');
         if (tags.length === 0) { $res.append('<span style="font-size:0.8em; opacity:0.6;">未检测到闭合标签</span>'); return; }
         tags.forEach(({tag, count}) => {
-            const conf = uiStateCache.chatHistory;
+            const conf = store.uiStateCache.chatHistory;
             if (conf.excludeTags.includes(tag) || conf.includeTags.includes(tag)) return;
             const $c = $(`<div class="pw-chat-tag-chip" style="cursor:pointer; opacity:0.7;">${tag} (${count})</div>`);
             $c.on('click', function () {
@@ -3793,19 +3790,19 @@ function bindEvents() {
     $(document).on('click.pw', '#pw-chat-refresh-btn', refreshChatTokenEstimate);
 
     function updateChatInferBadge() {
-        const enabled = uiStateCache.chatHistory && uiStateCache.chatHistory.enabled;
-        const isNpc = uiStateCache.generationMode === 'npc';
+        const enabled = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
+        const isNpc = store.uiStateCache.generationMode === 'npc';
         const $btn = $('#pw-btn-gen');
         const $refineBtn = $('#pw-btn-refine');
         const $refineInput = $('#pw-refine-input');
         if (enabled) {
-            if (!isEditingTemplate) $btn.html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
+            if (!store.isEditingTemplate) $btn.html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
             $refineBtn.find('.pw-refine-btn-text').text('更新');
             $refineBtn.find('i').removeClass('fa-magic').addClass('fa-rotate');
             $refineBtn.attr('title', '基于聊天记录更新人设');
             $refineInput.attr('placeholder', '输入更新方向，或留空直接基于聊天记录更新...');
         } else {
-            if (!isEditingTemplate) $btn.html(isNpc ? '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 NPC 设定' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
+            if (!store.isEditingTemplate) $btn.html(isNpc ? '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 NPC 设定' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
             $refineBtn.find('.pw-refine-btn-text').text('润色');
             $refineBtn.find('i').removeClass('fa-rotate').addClass('fa-magic');
             $refineBtn.attr('title', '执行润色');
@@ -3813,9 +3810,9 @@ function bindEvents() {
         }
     }
 
-    $(document).on('input.pw', '#pw-history-search', function() { historyPage = 1; renderHistoryList(); });
+    $(document).on('input.pw', '#pw-history-search', function() { store.historyPage = 1; renderHistoryList(); });
     $(document).on('click.pw', '#pw-history-search-clear', function () { $('#pw-history-search').val('').trigger('input'); });
-    $(document).on('click.pw', '#pw-history-clear-all', function () { if (confirm("清空?")) { historyCache = []; saveData(); renderHistoryList(); } });
+    $(document).on('click.pw', '#pw-history-clear-all', function () { if (confirm("清空?")) { store.historyCache = []; saveData(); renderHistoryList(); } });
 }
 
 const renderTemplateChips = () => {
@@ -3848,7 +3845,7 @@ const renderHistoryList = () => {
     const currentCharFilter = $filterChar.val();
     
     const chars = new Set();
-    historyCache.forEach(item => {
+    store.historyCache.forEach(item => {
         const title = item.title || "";
         // [Fix 3] New title format parsing
         // NPC: "NPC：Name @ Char"
@@ -3877,7 +3874,7 @@ const renderHistoryList = () => {
     const filterChar = $('#pw-hist-filter-char').val();
     const search = $('#pw-history-search').val().toLowerCase();
     
-    let filtered = historyCache.filter(item => {
+    let filtered = store.historyCache.filter(item => {
         if (item.data && item.data.type === 'opening') return false; 
         
         // Accurate Type Filtering
@@ -3900,12 +3897,12 @@ const renderHistoryList = () => {
     });
     
     const totalPages = Math.ceil(filtered.length / HISTORY_PER_PAGE) || 1;
-    if (historyPage > totalPages) historyPage = totalPages;
-    $('#pw-hist-page-info').text(`${historyPage} / ${totalPages}`);
-    $('#pw-hist-prev').prop('disabled', historyPage <= 1);
-    $('#pw-hist-next').prop('disabled', historyPage >= totalPages);
+    if (store.historyPage > totalPages) store.historyPage = totalPages;
+    $('#pw-hist-page-info').text(`${store.historyPage} / ${totalPages}`);
+    $('#pw-hist-prev').prop('disabled', store.historyPage <= 1);
+    $('#pw-hist-next').prop('disabled', store.historyPage >= totalPages);
 
-    const start = (historyPage - 1) * HISTORY_PER_PAGE;
+    const start = (store.historyPage - 1) * HISTORY_PER_PAGE;
     const paginated = filtered.slice(start, start + HISTORY_PER_PAGE);
 
     if (paginated.length === 0) { $list.html('<div style="text-align:center; opacity:0.6; padding:20px;">暂无记录</div>'); return; }
@@ -3954,12 +3951,12 @@ const renderHistoryList = () => {
 
             if (type.includes('template')) {
                 $('#pw-template-text').val(previewText);
-                if(targetMode==='npc') npcContext.template = previewText;
-                else userContext.template = previewText;
+                if(targetMode==='npc') store.npcContext.template = previewText;
+                else store.userContext.template = previewText;
                 saveData();
                 renderTemplateChips();
                 $('.pw-tab[data-tab="editor"]').click();
-                if (!isEditingTemplate) {
+                if (!store.isEditingTemplate) {
                      $('#pw-toggle-edit-template').click();
                 }
                 toastr.success("已加载选中的模版");
@@ -3972,8 +3969,8 @@ const renderHistoryList = () => {
         $el.find('.pw-hist-action-btn.del').on('click', function (e) {
             e.stopPropagation();
             if (confirm("删除?")) {
-                const realIndex = (historyPage - 1) * HISTORY_PER_PAGE + index;
-                historyCache.splice(realIndex, 1);
+                const realIndex = (store.historyPage - 1) * HISTORY_PER_PAGE + index;
+                store.historyCache.splice(realIndex, 1);
                 saveData(); renderHistoryList();
             }
         });
@@ -4319,7 +4316,7 @@ const getPosAbbr = (pos) => {
 
 const renderGreetingsList = () => {
     const list = getCharacterGreetingsList();
-    currentGreetingsList = list;
+    store.currentGreetingsList = list;
     const $select = $('#pw-greetings-select').empty();
     $select.append('<option value="">(不使用开场白)</option>');
     list.forEach((item, idx) => {
