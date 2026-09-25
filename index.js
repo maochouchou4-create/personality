@@ -1,9 +1,6 @@
 
-import { extension_settings, getContext } from "../../../extensions.js";
-import { saveSettingsDebounced, callPopup, getRequestHeaders, saveChat, reloadCurrentChat, saveCharacterDebounced } from "../../../../script.js";
-
-const extensionName = "st-persona-weaver";
-const CURRENT_VERSION = "3.4.6"; // Lifecycle/Timeline exception for not-yet-happened fields
+import { getContext } from "../../../extensions.js";
+import { saveSettingsDebounced, callPopup, getRequestHeaders } from "../../../../script.js";
 
 // Storage Keys
 const STORAGE_KEY_HISTORY = 'pw_history_v29_new_template'; 
@@ -1905,7 +1902,7 @@ async function openCreatorPopup() {
     }
     // -------------------------------------
 
-    const config = { ...defaultSettings, ...extension_settings[extensionName], ...savedState.localConfig };
+    const config = { ...defaultSettings, ...savedState.localConfig };
 
     let currentName = $('.persona_name').first().text().trim();
     if (!currentName) currentName = $('h5#your_name').text().trim();
@@ -4341,5 +4338,5 @@ function addPersonaButton() {
 jQuery(async () => {
     addPersonaButton(); 
     bindEvents(); 
-    console.log(`[PW] Persona Weaver Loaded (v${CURRENT_VERSION})`);
+    console.log("[PW] Persona Weaver loaded");
 });
