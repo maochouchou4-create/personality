@@ -1,349 +1,14 @@
 
 import { getContext } from "../../../extensions.js";
 import { saveSettingsDebounced, callPopup, getRequestHeaders } from "../../../../script.js";
-
-// Storage Keys
-const STORAGE_KEY_HISTORY = 'pw_history_v29_new_template'; 
-const STORAGE_KEY_STATE = 'pw_state_v20';
-const STORAGE_KEY_TEMPLATE = 'pw_template_v6_new_yaml'; 
-const STORAGE_KEY_PROMPTS = 'pw_prompts_v21_restore_edit'; 
-const STORAGE_KEY_WI_STATE = 'pw_wi_selection_v1';
-const STORAGE_KEY_UI_STATE = 'pw_ui_state_v4_preset';          
-const STORAGE_KEY_DATA_USER = 'pw_data_user_v1'; 
-const STORAGE_KEY_DATA_NPC = 'pw_data_npc_v1';
-const STORAGE_KEY_PINNED_BOOKS = 'pw_pinned_books_v1';
-const STORAGE_KEY_AVATAR_IMAGES = 'pw_avatar_images_v1';
+import { DEFAULT_TEMPLATES, DEFAULT_PROMPTS, FALLBACK_SYSTEM_PROMPT } from "./src/prompts.js";
+import { TEXT } from "./src/strings.js";
+import { store, getCurrentTemplate, safeLocalStorageSet, loadData, saveData, saveHistory, saveState, loadState, saveAvatarImages, STORAGE_KEY_WI_STATE, STORAGE_KEY_PINNED_BOOKS } from "./src/state.js";
+import { parseYamlToBlocks } from "./src/yaml.js";
+import { getCharacterInfoText, getCharacterGreetingsList, fetchChatHistoryFiltered, scanChatTags, getActivePersonaDescription, fetchAvatarAsBase64 } from "./src/st-data.js";
 
 const BUTTON_ID = 'pw_persona_tool_btn';
 const HISTORY_PER_PAGE = 20;
-
-// 1. 默认 User 模版 (主模版)
-const defaultYamlTemplate =
-`基本信息: 
-  姓名: {{user}}
-  年龄: 
-  性别: 
-  身高: 
-  身份:
-
-背景故事:
-  童年_0_12岁: 
-  少年_13_18岁: 
-  青年_19_35岁: 
-  中年_35至今: 
-  现状: 
-
-家庭背景:
-  父亲: 
-  母亲: 
-  其他成员:
-
-社交关系:
-
-社会地位: 
-
-外貌:
-  发型: 
-  眼睛: 
-  肤色: 
-  脸型: 
-  体型: 
-
-衣着风格:
-  商务正装: 
-  商务休闲: 
-  休闲装: 
-  居家服: 
-
-性格:
-  核心特质:
-  恋爱特质:
-
-生活习惯:
-
-工作行为:
-
-情绪表现:
-  愤怒时: 
-  高兴时: 
-
-人生目标:
-
-缺点弱点:
-
-喜好厌恶:
-  喜欢:
-  讨厌:
-
-能力技能:
-  工作相关:
-  生活相关:
-  爱好特长:
-
-NSFW:
-  性相关特征:
-    性经验: 
-    性取向: 
-    性角色: 
-    性习惯:
-  性癖好:
-  禁忌底线:`;
-
-// 1.1 NPC 模版
-const defaultNpcTemplate = 
-`基本信息:
-  姓名: 
-  年龄: 
-  性别: 
-  身高: 
-  身份: 
-
-家庭背景:
-  出身:
-  成员:
-
-外貌特征:
-  发型: 
-  眼睛: 
-  体型: 
-  衣着风格: 
-
-性格特质:
-  核心性格:
-  说话风格:
-  行为模式:
-
-背景故事:
-  过往经历: 
-  当前目标: 
-
-人际关系:
-  与主角关系: 
-  与其他角色关系: 
-
-喜好厌恶:
-  喜欢:
-  讨厌:
-
-NSFW:
-  性相关特征:
-  性癖好:`;
-
-// 2. User 模版生成专用 Prompt
-const defaultTemplateGenPrompt = 
-`[TASK: DESIGN_OR_REFINE_USER_PROFILE_SCHEMA]
-[CONTEXT: The user is entering a simulation world defined by the database provided in System Context.]
-[GOAL: Create or refine a comprehensive YAML template (Schema Only) for the **User Avatar (Protagonist)**.]
-
-{{currentTemplate}}
-
-{{userRequirements}}
-
-<requirements>
-1. Language: **Simplified Chinese (简体中文)** keys.
-2. Structure: YAML keys only. Leave values empty.
-3. **World Consistency**: The fields MUST reflect the specific logic of the provided World Setting.
-   - If the world is Xianxia, include keys like "根骨", "境界", "灵根".
-   - If the world is ABO, include "第二性别", "信息素气味".
-   - If the world is Modern, use standard sociological attributes.
-4. Scope: Biological, Sociological, Psychological, Special Abilities.
-5. Detail Level: High. This is for the main character.
-6. If user has provided specific requirements, prioritize fulfilling them.
-7. If an existing template is provided above, modify it according to the user's request. Preserve fields the user did not mention unless explicitly asked to restructure.
-8. If no existing template is provided, create a new one from scratch.
-</requirements>
-
-[Constraint]: Do NOT include any "Little Theater", scene descriptions, or values. STRICTLY YAML KEYS ONLY.
-
-[Action]:
-Output the YAML template now. No explanations.`;
-
-// 2.1 NPC 模版生成/润色合并 Prompt
-const defaultNpcTemplateGenPrompt = 
-`[TASK: DESIGN_OR_REFINE_NPC_PROFILE_SCHEMA]
-[CONTEXT: The user needs a supporting character for the simulation.]
-[GOAL: Create or refine a concise YAML template (Schema Only) for a **Non-Player Character (NPC)**.]
-
-{{currentTemplate}}
-
-{{userRequirements}}
-
-<requirements>
-1. Language: **Simplified Chinese (简体中文)** keys.
-2. Structure: YAML keys only. Leave values empty.
-3. **World Consistency**: The fields MUST reflect the specific logic of the provided World Setting.
-   - If the world is Xianxia, include keys like "根骨", "境界", "宗门".
-   - If the world is ABO, include "第二性别", "信息素".
-   - If the world is Cyberpunk, include "义体化程度", "所属公司".
-4. Scope: Functional (Role/Faction), Visual (Appearance), Relational (Connection to MC).
-5. Detail Level: Moderate. Focus on identifiable traits and narrative function.
-6. If user has provided specific requirements, prioritize fulfilling them.
-7. If an existing template is provided above, modify it according to the user's request. Preserve fields the user did not mention unless explicitly asked to restructure.
-8. If no existing template is provided, create a new one from scratch.
-</requirements>
-
-[Constraint]: Do NOT include any "Little Theater", scene descriptions, or values. STRICTLY YAML KEYS ONLY.
-
-[Action]:
-Output the YAML template now. No explanations.`;
-
-// 2.2 Legacy aliases — merged into gen prompts
-const defaultTemplateRefinePrompt = defaultTemplateGenPrompt;
-
-// 2.3 Legacy aliases — merged into gen prompts
-const defaultNpcTemplateRefinePrompt = defaultNpcTemplateGenPrompt;
-
-// 3. User 人设生成/润色 Prompt
-const defaultPersonaGenPrompt =
-`[Task: Generate/Refine User Profile]
-[Target Entity: "{{user}}"]
-
-<source_materials>
-{{charInfo}}
-{{greetings}}
-</source_materials>
-
-<target_schema>
-{{template}}
-</target_schema>
-
-{{input}} 
-
-[Requirements]:
-1. Follow the YAML schema exactly. Output every leaf field defined in the schema.
-2. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from source materials or the user's request, generate the most reasonable value consistent with the persona, context, and worldview — but do NOT contradict existing evidence.
-3. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the character has NOT YET reached or experienced (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; a future plot beat that has not happened in the established narrative). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. The reason MUST be contextual — bare "未知" / "N/A" / "TBD" without explanation is still forbidden.
-4. REFINE / PATCH MODE — If a Target Buffer (existing profile) is provided in the input, treat it as the baseline. PRESERVE every field not explicitly affected by the user's patch instruction. Do NOT clear, blank, shorten, or replace untouched fields with placeholders. Only modify the fields targeted by the patch (and any directly implied by it). Any field that was previously blank MUST now be filled (subject to rules 2 and 3).
-
-[Constraint]: Do NOT include any "Little Theater", "Small Theater", scene descriptions, internal monologues, or CoT status bars. STRICTLY YAML DATA ONLY. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 3). Before finishing, silently re-check the output and fill in any field that is still blank.
-
-[Action]:
-Output ONLY the YAML data matching the schema, with every field populated.`;
-
-// 4. NPC 人设生成/润色 Prompt
-const defaultNpcGenPrompt = 
-`[Task: Generate NPC Profile(s)]
-[Context: Create NPC(s) relevant to the current story flow. Generate one or multiple NPCs based on the user's request.]
-
-<story_context>
-{{charInfo}}
-{{userPersona}}
-</story_context>
-
-<target_schema>
-{{template}}
-</target_schema>
-
-{{input}}
-
-[Requirements]:
-1. Each NPC should fit naturally into the current story context and world setting.
-2. Relationship with {{user}} and {{char}} should be defined clearly.
-3. Follow the YAML schema provided. If generating a single NPC, be detailed. If generating multiple, focus on distinguishing traits for each.
-4. If generating multiple NPCs, separate each with a line containing ONLY "---".
-5. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field in the target schema for each NPC with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". When direct evidence is missing, generate the most reasonable value consistent with the NPC's role, the story context, and the worldview — without contradicting existing evidence.
-6. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the NPC has NOT YET reached or experienced (e.g. a young NPC's "中年" / "老年" stage; an unborn child; a future plot beat that has not happened in the established narrative). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（NPC现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. Bare "未知" / "N/A" / "TBD" without a contextual reason is still forbidden.
-7. REFINE / PATCH MODE — If a Target Buffer (existing NPC profile or multi-NPC document) is provided in the input, treat it as the baseline. PRESERVE every field of every NPC that is not explicitly affected by the user's patch instruction. Do NOT clear, blank, shorten, or replace untouched fields with placeholders. Only modify the fields (or NPCs) targeted by the patch. Any field that was previously blank MUST now be filled (subject to rules 5 and 6).
-
-[Constraint]: Do NOT include any "Little Theater", "Small Theater", scene descriptions, internal monologues, or CoT status bars. STRICTLY YAML DATA ONLY. Every leaf key in the schema MUST have a non-empty value for every NPC (a properly-explained timeline placeholder counts as non-empty per rule 6). Before finishing, silently re-check the output and fill in any field that is still blank.
-
-[Action]:
-Output ONLY the YAML data matching the schema, with every field populated.`;
-
-// 5. User 聊天推断/更新 Prompt
-const defaultChatInferPrompt =
-`[Task: Infer or Update User Profile from Chat History]
-[Target Entity: "{{user}}"]
-
-<chat_history>
-{{chatHistory}}
-</chat_history>
-
-{{currentText}}
-
-<source_materials>
-{{charInfo}}
-</source_materials>
-
-<target_schema>
-{{template}}
-</target_schema>
-
-{{input}}
-
-[Requirements]:
-1. Carefully analyze the chat history. Focus on how "{{user}}" speaks, behaves, reacts, and expresses emotions.
-2. Extract personality traits, speech patterns, values, habits, relationships, and other characteristics revealed through dialogue.
-3. Priority of information sources:
-   (a) Direct evidence from the chat history and source materials.
-   (b) Attached avatar / reference images (for appearance-related fields).
-   (c) Reasonable, context-consistent inference derived from tone, worldview, relationships, and common sense.
-4. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field in the target schema with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from chat/images, generate the most reasonable value consistent with the observed personality, context, and worldview — but do NOT contradict existing evidence.
-5. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the user character has NOT YET reached or experienced in the chat history / source materials (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; an event scheduled for later in the story). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. Bare "未知" / "N/A" / "TBD" without a contextual reason is still forbidden.
-6. If an existing profile is provided above, PRESERVE content still consistent with the chat, ADD newly revealed traits, UPDATE evolved traits, and ENRICH with observed patterns. Any field that was previously blank MUST now be filled (subject to rules 4 and 5).
-7. If no existing profile is provided, create a complete new profile from scratch.
-8. When avatar / reference images are attached, you MUST use them to fully populate appearance-related fields (hair, eyes, skin, face, build, typical outfit, etc.). Appearance fields must never remain blank when an image is provided.
-9. Pay special attention to: tone of voice, emotional reactions, decision-making patterns, relationship dynamics, recurring themes.
-
-[Constraint]: STRICTLY YAML DATA ONLY. No explanations, no scene descriptions. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 5). Before finishing, silently re-check the output and fill in any field that is still blank.
-
-[Action]:
-Output the COMPLETE YAML profile matching the schema, with every field populated.`;
-
-// 6. NPC 聊天推断/更新 Prompt
-const defaultNpcChatInferPrompt =
-`[Task: Infer or Update NPC Profile(s) from Chat History]
-[Context: Analyze the chat history to extract or update NPC character profile(s) relevant to the story.]
-
-<chat_history>
-{{chatHistory}}
-</chat_history>
-
-{{currentText}}
-
-<story_context>
-{{charInfo}}
-{{userPersona}}
-</story_context>
-
-<target_schema>
-{{template}}
-</target_schema>
-
-{{input}}
-
-[Requirements]:
-1. Analyze the chat history for NPC behavior, speech patterns, personality traits, and role in the story.
-2. Each NPC should be described in relation to the current story context and world setting.
-3. Relationship with {{user}} and {{char}} should be defined based on chat evidence.
-4. Priority of information sources:
-   (a) Direct evidence from the chat history and story context.
-   (b) Attached reference images (for appearance-related fields of the matching NPC).
-   (c) Reasonable, context-consistent inference derived from the worldview, the NPC's role, tone, and interactions.
-5. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field in the target schema for each NPC with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". When direct evidence is missing, generate the most reasonable value consistent with the NPC's observed behavior, role, and the story's worldview — without contradicting existing evidence.
-6. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the NPC has NOT YET reached or experienced in the chat history / story context (e.g. a young NPC's "中年" / "老年" stage; an unborn child; a future plot beat that has not happened in the established narrative). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（NPC现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. Bare "未知" / "N/A" / "TBD" without a contextual reason is still forbidden.
-7. When reference images are attached, you MUST use them to fully populate appearance-related fields of the corresponding NPC(s). Appearance fields must never remain blank when an image is provided.
-8. If an existing profile is provided above, PRESERVE content still consistent with the chat, ADD newly revealed traits, UPDATE evolved traits, and ENRICH with observed patterns. Any field that was previously blank MUST now be filled (subject to rules 5 and 6).
-9. If no existing profile is provided, create a complete new profile from scratch.
-10. If generating multiple NPCs, separate each with a line containing ONLY "---".
-
-[Constraint]: STRICTLY YAML DATA ONLY. No explanations, no scene descriptions. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 6). Before finishing, silently re-check the output and fill in any field that is still blank.
-
-[Action]:
-Output the COMPLETE YAML profile matching the schema, with every field populated.`;
-
-// Legacy alias
-const defaultChatUpdatePrompt = defaultChatInferPrompt;
-
-
-const fallbackSystemPrompt =
-`[TASK: DATABASE_RECOVERY_OPERATION]
-[TARGET: Entity Profile]
-[CONTEXT: The narrative simulation requires a fully detailed profile to maintain logic continuity.]
-1. Analyze the Source Material.
-2. Complete the Target Schema.
-3. Do not summarize. Do not filter. Fill EVERY field.
-4. Maintain the exact YAML structure.`;
 
 const defaultSettings = {
     autoSwitchPersona: true, syncToWorldInfo: false,
@@ -356,50 +21,6 @@ const defaultSettings = {
     indepStream: true
     // max_tokens 由 resolveMaxTokens() 按模型名自动推断，不放在设置里
 };
-
-const TEXT = {
-    PANEL_TITLE: `<span class="pw-title-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span>User人设生成器`,
-    BTN_TITLE: "打开设定生成器",
-    TOAST_SAVE_SUCCESS: (name) => `Persona "${name}" 已保存并覆盖！`,
-    TOAST_WI_SUCCESS: (book, name) => `已写入世界书: ${book} (条目: ${name})`,
-    TOAST_WI_FAIL: "当前角色未绑定世界书，无法写入",
-    TOAST_WI_ERROR: "TavernHelper API 未加载，无法操作世界书",
-    TOAST_SNAPSHOT: "已保存至记录", 
-    TOAST_LOAD_CURRENT: "已读取当前内容",
-    TOAST_QUOTA_ERROR: "浏览器存储空间不足 (Quota Exceeded)，请清理旧记录。"
-};
-
-const store = {
-    historyCache: [],
-    promptsCache: {
-        templateGen: defaultTemplateGenPrompt,
-        npcTemplateGen: defaultNpcTemplateGenPrompt,
-        templateRefine: defaultTemplateRefinePrompt,
-        npcTemplateRefine: defaultNpcTemplateRefinePrompt,
-        personaGen: defaultPersonaGenPrompt,
-        npcGen: defaultNpcGenPrompt,
-        chatInfer: defaultChatInferPrompt,
-        npcChatInfer: defaultNpcChatInferPrompt,
-        initial: fallbackSystemPrompt
-    },
-    availableWorldBooks: [],
-    isEditingTemplate: false,
-    isProcessing: false,
-    currentGreetingsList: [],
-    wiSelectionCache: {},
-    uiStateCache: { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } },
-    avatarImagesCache: [], // [{id, name, base64, tags:['user'|'npc'], addedAt}]
-    currentUserAvatarBase64: null, // pre-loaded on panel open
-    historyPage: 1,
-    lastRefineRequest: "",
-    userContext: { template: defaultYamlTemplate, request: "", result: "", hasResult: false },
-    npcContext: { template: defaultNpcTemplate, request: "", result: "", hasResult: false },
-    currentDiffBlocks: [],
-};
-
-const getCurrentTemplate = () => {
-    return store.uiStateCache.generationMode === 'npc' ? store.npcContext.template : store.userContext.template;
-}
 
 // ============================================================================
 // 工具函数
@@ -419,228 +40,6 @@ function wrapAsXiTaReference(content, title) {
 """
 ${content}
 """`;
-}
-
-function getCharacterInfoText() {
-    if (window.TavernHelper && window.TavernHelper.getCharData) {
-        const charData = window.TavernHelper.getCharData('current');
-        if (!charData) return "";
-        let text = "";
-        const MAX_FIELD_LENGTH = 1000000; 
-        if (charData.description) text += `Description:\n${charData.description.substring(0, MAX_FIELD_LENGTH)}\n`;
-        if (charData.personality) text += `Personality:\n${charData.personality.substring(0, MAX_FIELD_LENGTH)}\n`;
-        if (charData.scenario) text += `Scenario:\n${charData.scenario.substring(0, MAX_FIELD_LENGTH)}\n`;
-        return text;
-    }
-    const context = getContext();
-    const charId = SillyTavern.getCurrentChatId ? SillyTavern.characterId : context.characterId; 
-    if (charId === undefined || !context.characters[charId]) return "";
-    const char = context.characters[charId];
-    const data = char.data || char; 
-    let text = "";
-    if (data.description) text += `Description:\n${data.description}\n`;
-    if (data.personality) text += `Personality:\n${data.personality}\n`;
-    if (data.scenario) text += `Scenario:\n${data.scenario}\n`;
-    return text;
-}
-
-function getCharacterGreetingsList() {
-    const context = getContext();
-    const charId = context.characterId;
-    if (charId === undefined || !context.characters[charId]) return [];
-    const char = context.characters[charId];
-    const data = char.data || char;
-    const list = [];
-    if (data.first_mes) {
-        list.push({ label: "开场白 #0", content: data.first_mes });
-    }
-    if (Array.isArray(data.alternate_greetings)) {
-        data.alternate_greetings.forEach((greeting, index) => {
-            list.push({ label: `开场白 #${index + 1}`, content: greeting });
-        });
-    }
-    return list;
-}
-
-function escapeRegexPW(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
-function applyTagFilters(text, includeTags, excludeTags) {
-    let result = String(text || "");
-    result = result.replace(/<!--[\s\S]*?-->/g, '');
-
-    if (excludeTags && excludeTags.length > 0) {
-        excludeTags.forEach(tag => {
-            const re = new RegExp(`<${escapeRegexPW(tag)}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${escapeRegexPW(tag)}>`, 'gi');
-            result = result.replace(re, '');
-        });
-    }
-    if (includeTags && includeTags.length > 0) {
-        const incPattern = new RegExp(`<(${includeTags.map(escapeRegexPW).join('|')})(?:\\s[^>]*)?>([\\s\\S]*?)<\\/\\1>`, 'gi');
-        const matches = [...result.matchAll(incPattern)];
-        if (matches.length > 0) result = matches.map(m => m[2]).join('\n\n');
-    }
-    result = result.replace(/<[^>]*>/g, '');
-    return result.replace(/\n{3,}/g, '\n\n').trim();
-}
-
-function estimateTokens(text) {
-    if (!text) return 0;
-    const cjk = (text.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
-    const rest = text.replace(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/g, '');
-    const words = rest.split(/\s+/).filter(w => w.length > 0).length;
-    return Math.ceil(cjk * 1.5 + words * 1.3);
-}
-
-async function getChatHistoryText(limit = 15) {
-    if (window.TavernHelper && window.TavernHelper.getChatMessages) {
-        try {
-            const messages = window.TavernHelper.getChatMessages(`-${limit}-{{lastMessageId}}`);
-            if (!Array.isArray(messages)) return "";
-            return messages.map(msg => {
-                const role = msg.is_user ? 'User' : (msg.name || 'Char');
-                const content = msg.message.replace(/<[^>]*>/g, ''); 
-                return `${role}: ${content}`;
-            }).join('\n');
-        } catch (e) {
-            console.warn("[PW] Failed to fetch chat history:", e);
-        }
-    }
-    return "";
-}
-
-async function fetchChatHistoryFiltered(opts = {}) {
-    if (!window.TavernHelper || !window.TavernHelper.getChatMessages) return { text: "", messages: [], tokenEstimate: 0 };
-
-    const chatConf = store.uiStateCache.chatHistory || {};
-    const floorFrom = opts.floorFrom ?? chatConf.floorFrom;
-    const floorTo = opts.floorTo ?? chatConf.floorTo;
-    const preset = opts.preset ?? chatConf.preset ?? '20';
-    const excludeTags = opts.excludeTags ?? chatConf.excludeTags ?? [];
-    const includeTags = opts.includeTags ?? chatConf.includeTags ?? [];
-
-    let messages = [];
-    try {
-        if (floorFrom !== '' && floorTo !== '' && !isNaN(floorFrom) && !isNaN(floorTo)) {
-            messages = window.TavernHelper.getChatMessages(`${floorFrom}-${floorTo}`);
-        } else {
-            const limit = preset === 'all' ? 9999 : parseInt(preset) || 20;
-            messages = window.TavernHelper.getChatMessages(`-${limit}-{{lastMessageId}}`);
-        }
-    } catch (e) {
-        console.warn("[PW] fetchChatHistoryFiltered error:", e);
-        return { text: "", messages: [], tokenEstimate: 0 };
-    }
-
-    if (!Array.isArray(messages)) return { text: "", messages: [], tokenEstimate: 0 };
-
-    const processed = messages.map(msg => {
-        const role = msg.is_user ? 'User' : (msg.name || 'Char');
-        const floorId = msg.message_id ?? '?';
-        let content = msg.message || '';
-        if (msg.is_user) {
-            content = content.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]*>/g, '');
-        } else {
-            content = applyTagFilters(content, includeTags, excludeTags);
-        }
-        return { role, floorId, content: content.trim(), is_user: msg.is_user };
-    }).filter(m => m.content.length > 0);
-
-    const text = processed.map(m => `[#${m.floorId}] ${m.role}: ${m.content}`).join('\n\n');
-    return { text, messages: processed, tokenEstimate: estimateTokens(text) };
-}
-
-async function scanChatTags(limit = 30) {
-    if (!window.TavernHelper || !window.TavernHelper.getChatMessages) return [];
-    try {
-        const msgs = window.TavernHelper.getChatMessages(`-${limit}-{{lastMessageId}}`);
-        if (!Array.isArray(msgs)) return [];
-        const tagCounts = {};
-        msgs.forEach(msg => {
-            if (msg.is_user) return;
-            const text = String(msg.message || "");
-            const matches = [...text.matchAll(/<([a-zA-Z0-9_\-\.]+)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g)];
-            matches.forEach(m => { tagCounts[m[1]] = (tagCounts[m[1]] || 0) + 1; });
-        });
-        return Object.entries(tagCounts).sort((a,b) => b[1] - a[1]).map(([tag, count]) => ({ tag, count }));
-    } catch (e) { return []; }
-}
-
-// ============================================================================
-// 数据解析
-// ============================================================================
-
-function parseYamlToBlocks(text) {
-    const map = new Map();
-    if (!text || typeof text !== 'string') return map;
-    try {
-        const cleanText = text.replace(/^```[a-z]*\n?/im, '').replace(/```$/im, '').trim();
-        let lines = cleanText.split('\n');
-        const topLevelKeyRegex = /^\s*([^:\s\-]+?)\s*[:：]/;
-        let topKeysIndices = [];
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.length < 200 && topLevelKeyRegex.test(line) && !line.trim().startsWith('-') && line.search(/\S|$/) === 0) {
-                topKeysIndices.push(i);
-            }
-        }
-        if (topKeysIndices.length === 1 && lines.length > 2) {
-            const firstLineIndex = topKeysIndices[0];
-            const remainingLines = lines.slice(firstLineIndex + 1);
-            let minIndent = Infinity;
-            let hasContent = false;
-            for (const l of remainingLines) {
-                if (l.trim().length > 0) {
-                    const indent = l.search(/\S|$/);
-                    if (indent < minIndent) minIndent = indent;
-                    hasContent = true;
-                }
-            }
-            if (hasContent && minIndent > 0 && minIndent !== Infinity) {
-                lines = remainingLines.map(l => l.length >= minIndent ? l.substring(minIndent) : l);
-            }
-        }
-        let currentKey = null;
-        let currentBuffer = [];
-        const flushBuffer = () => {
-            if (currentKey && currentBuffer.length > 0) {
-                let valuePart = "";
-                const firstLine = currentBuffer[0];
-                const match = firstLine.match(topLevelKeyRegex);
-                if (match) {
-                    let inlineContent = firstLine.substring(match[0].length).trim();
-                    let blockContent = currentBuffer.slice(1).join('\n');
-                    if (inlineContent && blockContent) valuePart = inlineContent + '\n' + blockContent;
-                    else if (inlineContent) valuePart = inlineContent;
-                    else valuePart = blockContent;
-                } else {
-                    valuePart = currentBuffer.join('\n');
-                }
-                map.set(currentKey, valuePart);
-            }
-        };
-        lines.forEach((line) => {
-            const isTopLevel = (line.length < 200) && topLevelKeyRegex.test(line) && !line.trim().startsWith('-');
-            const indentLevel = line.search(/\S|$/);
-            if (isTopLevel && indentLevel <= 1) {
-                flushBuffer();
-                const match = line.match(topLevelKeyRegex);
-                currentKey = match[1].trim();
-                currentBuffer = [line];
-            } else {
-                if (currentKey) { currentBuffer.push(line); }
-            }
-        });
-        flushBuffer();
-    } catch (e) { console.error("[PW] Parse Error:", e); }
-    return map;
-}
-
-function findMatchingKey(targetKey, map) {
-    if (map.has(targetKey)) return targetKey;
-    for (const key of map.keys()) {
-        if (key.toLowerCase() === targetKey.toLowerCase()) return key;
-    }
-    return null;
 }
 
 async function collectContextData() {
@@ -691,64 +90,6 @@ async function collectContextData() {
         wi: wiContent.join('\n\n'),
         greetings: greetingsContent
     };
-}
-
-function getActivePersonaDescription() {
-    const domVal = $('#persona_description').val();
-    if (domVal !== undefined && domVal !== null) return domVal;
-    const context = getContext();
-    if (context && context.powerUserSettings) {
-        if (context.powerUserSettings.persona_description) return context.powerUserSettings.persona_description;
-        const selected = context.powerUserSettings.persona_selected;
-        if (selected && context.powerUserSettings.personas && context.powerUserSettings.personas[selected]) {
-            return context.powerUserSettings.personas[selected];
-        }
-    }
-    return "";
-}
-
-function getUserAvatarUrl() {
-    const parentWin = window.parent || window;
-    const parentDoc = parentWin.document;
-    const makeUrl = (filename) => {
-        if (!filename) return null;
-        if (filename.startsWith('http') || filename.startsWith('data:')) return filename;
-        const cleanName = filename.split(/[/\\]/).pop();
-        return `/User%20Avatars/${encodeURIComponent(cleanName)}?v=${Date.now()}`;
-    };
-    const selectedContainer = parentDoc.querySelector('#user_avatar_block .avatar-container.selected');
-    if (selectedContainer) {
-        const avatarId = selectedContainer.getAttribute('data-avatar-id');
-        if (avatarId) return makeUrl(avatarId);
-    }
-    if (parentWin.user_avatar) return makeUrl(parentWin.user_avatar);
-    const sidebarImg = parentDoc.getElementById('user_avatar_img');
-    if (sidebarImg && sidebarImg.src && !sidebarImg.src.includes('placeholder')) return sidebarImg.src;
-    const avatarBlock = parentDoc.querySelector('#user_avatar_block');
-    if (avatarBlock) {
-        const img = avatarBlock.querySelector('img');
-        if (img && img.src && !img.src.includes('placeholder')) return img.src;
-    }
-    return null;
-}
-
-async function fetchAvatarAsBase64() {
-    const url = getUserAvatarUrl();
-    if (!url) return null;
-    try {
-        const response = await fetch(url, { credentials: 'same-origin' });
-        if (!response.ok) return null;
-        const blob = await response.blob();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
-        });
-    } catch (e) {
-        console.warn("[PW] Avatar fetch failed:", e);
-        return null;
-    }
 }
 
 function wrapInputForSafety(request, oldText, isRefine) {
@@ -910,7 +251,7 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
     let activeSystemPrompt = getRealSystemPrompt(store.uiStateCache.generationPreset);
 
     if (!activeSystemPrompt && store.uiStateCache.generationPreset !== 'pure') {
-        activeSystemPrompt = fallbackSystemPrompt.replace(/{{user}}/g, currentName);
+        activeSystemPrompt = FALLBACK_SYSTEM_PROMPT.replace(/{{user}}/g, currentName);
     } else if (activeSystemPrompt) {
         // [Fix 9] Prevent WI duplication by stripping macros from fetched system prompt
         activeSystemPrompt = activeSystemPrompt
@@ -933,7 +274,7 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
         let storedPrompt = isNpcMode
             ? (store.promptsCache.npcTemplateGen || '')
             : (store.promptsCache.templateGen || '');
-        const defaultPrompt = isNpcMode ? defaultNpcTemplateGenPrompt : defaultTemplateGenPrompt;
+        const defaultPrompt = isNpcMode ? DEFAULT_PROMPTS.npcTemplateGen : DEFAULT_PROMPTS.templateGen;
 
         let basePrompt = (storedPrompt && storedPrompt.includes('{{userRequirements}}'))
             ? storedPrompt
@@ -964,8 +305,8 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
             ? wrapAsXiTaReference(currentText, `Existing Profile: ${targetName}`)
             : '';
         let basePrompt = isNpcMode
-            ? (store.promptsCache.npcChatInfer || defaultNpcChatInferPrompt)
-            : (store.promptsCache.chatInfer || defaultChatInferPrompt);
+            ? (store.promptsCache.npcChatInfer || DEFAULT_PROMPTS.npcChatInfer)
+            : (store.promptsCache.chatInfer || DEFAULT_PROMPTS.chatInfer);
 
         userMessageContent = basePrompt
             .replace(/{{user}}/g, currentName)
@@ -980,8 +321,8 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
             .replace(/{{chatHistory}}/g, wrappedChatHistory);
     } else {
         let basePrompt = isNpcMode
-            ? (store.promptsCache.npcGen || defaultNpcGenPrompt)
-            : (store.promptsCache.personaGen || defaultPersonaGenPrompt);
+            ? (store.promptsCache.npcGen || DEFAULT_PROMPTS.npcGen)
+            : (store.promptsCache.personaGen || DEFAULT_PROMPTS.personaGen);
         
         userMessageContent = basePrompt
             .replace(/{{user}}/g, currentName)
@@ -994,7 +335,7 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
             .replace(/{{chatHistory}}/g, wrappedChatHistory);
     }
 
-    // NPC多角色指令已在 defaultNpcGenPrompt 中包含，无需运行时注入
+    // NPC多角色指令已在 DEFAULT_PROMPTS.npcGen 中包含，无需运行时注入
 
     // Collect selected avatar images (auto-enabled when any image is selected)
     const avatarConf = store.uiStateCache.avatarRef || {};
@@ -1238,160 +579,6 @@ async function runGeneration(data, apiConfig, isTemplateMode = false) {
     return responseContent;
 }
 
-// ============================================================================
-// 存储与系统函数
-// ============================================================================
-
-function safeLocalStorageSet(key, value) {
-    try {
-        localStorage.setItem(key, value);
-    } catch (e) {
-        if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-            toastr.error(TEXT.TOAST_QUOTA_ERROR);
-        }
-    }
-}
-
-function loadData() {
-    try { store.historyCache = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY)) || []; } catch { store.historyCache = []; }
-    try {
-        const p = JSON.parse(localStorage.getItem(STORAGE_KEY_PROMPTS));
-        const migrateTemplatePrompt = (stored, def) =>
-            (stored && stored.includes('{{userRequirements}}')) ? stored : def;
-        // v3.4.6 引入的"生命周期/时间线豁免"标识，用于识别旧版默认值
-        const V345_PROHIBIT_SIG = 'Do NOT output empty strings, "未知", "unknown", "N/A", "待定", "TBD", "暂无", null, "-", or placeholders.';
-        const hasLifecycleExc = (s) => s.includes('LIFECYCLE / TIMELINE EXCEPTION') || s.includes('尚未发生（角色');
-
-        // 聊天推断 Prompt 迁移：
-        //  - v3.4.3 及更早旧版（无 MANDATORY COMPLETENESS）→ 升级到新默认
-        //  - v3.4.4/v3.4.5 旧默认（有 MANDATORY 但无 LIFECYCLE EXCEPTION，且保留 v3.4.5 原句）→ 升级到新默认
-        //  - 用户深度自定义 → 保留
-        const migrateChatInferPrompt = (stored, def) => {
-            if (!stored) return def;
-            const hasOldRule = stored.includes('Base the profile ONLY on evidence from the chat history. Do NOT invent unsupported traits.')
-                || stored.includes('If certain fields cannot be determined, make reasonable inferences.');
-            const hasNewGuard = stored.includes('MANDATORY COMPLETENESS') || stored.includes('NEVER leave any field blank');
-            if (hasOldRule && !hasNewGuard) return def;
-            if (hasNewGuard && !hasLifecycleExc(stored) && stored.includes(V345_PROHIBIT_SIG)) return def;
-            return stored;
-        };
-        // 生成/润色 Prompt 迁移：
-        //  - v3.4.3 及更早默认（无 MANDATORY COMPLETENESS / 无 PATCH MODE）→ 升级，修复纯润色字段被清空
-        //  - v3.4.4/v3.4.5 旧默认（有 MANDATORY 但无 LIFECYCLE EXCEPTION，且保留 v3.4.5 原句）→ 升级，
-        //    解决"角色未到中年阶段时字段被强行编造"以及自定义模板里同类时间锁字段的问题
-        //  - 用户深度自定义内容保持不变
-        const migrateGenPrompt = (stored, def, signature) => {
-            if (!stored) return def;
-            const hasNewGuard = stored.includes('MANDATORY COMPLETENESS') || stored.includes('NEVER leave any field blank');
-            if (hasNewGuard) {
-                if (!hasLifecycleExc(stored) && stored.includes(signature) && stored.includes(V345_PROHIBIT_SIG)) {
-                    return def;
-                }
-                return stored;
-            }
-            const looksLikeOldDefault = stored.includes(signature)
-                && stored.includes('Output ONLY the YAML data matching the schema.');
-            if (looksLikeOldDefault) return def;
-            return stored;
-        };
-        store.promptsCache = {
-            templateGen: migrateTemplatePrompt(p && p.templateGen, defaultTemplateGenPrompt),
-            npcTemplateGen: migrateTemplatePrompt(p && p.npcTemplateGen, defaultNpcTemplateGenPrompt),
-            templateRefine: defaultTemplateRefinePrompt,
-            npcTemplateRefine: defaultNpcTemplateRefinePrompt,
-            personaGen: migrateGenPrompt(p && p.personaGen, defaultPersonaGenPrompt, '[Task: Generate/Refine User Profile]'),
-            npcGen: migrateGenPrompt(p && p.npcGen, defaultNpcGenPrompt, '[Task: Generate NPC Profile(s)]'),
-            chatInfer: migrateChatInferPrompt(p && p.chatInfer, defaultChatInferPrompt),
-            npcChatInfer: migrateChatInferPrompt(p && p.npcChatInfer, defaultNpcChatInferPrompt),
-            initial: (p && p.initial) ? p.initial : fallbackSystemPrompt
-        };
-    } catch { 
-        store.promptsCache = { 
-            templateGen: defaultTemplateGenPrompt, npcTemplateGen: defaultNpcTemplateGenPrompt,
-            templateRefine: defaultTemplateRefinePrompt, npcTemplateRefine: defaultNpcTemplateRefinePrompt,
-            personaGen: defaultPersonaGenPrompt, npcGen: defaultNpcGenPrompt, 
-            chatInfer: defaultChatInferPrompt, npcChatInfer: defaultNpcChatInferPrompt,
-            initial: fallbackSystemPrompt 
-        }; 
-    }
-    try { store.wiSelectionCache = JSON.parse(localStorage.getItem(STORAGE_KEY_WI_STATE)) || {}; } catch { store.wiSelectionCache = {}; }
-    
-    // [Updated] Load UI State with Preset info + chatHistory config
-    const defaultUiState = { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
-    try {
-        store.uiStateCache = JSON.parse(localStorage.getItem(STORAGE_KEY_UI_STATE)) || defaultUiState;
-        if (!store.uiStateCache.chatHistory) store.uiStateCache.chatHistory = { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] };
-        if (!store.uiStateCache.avatarRef || typeof store.uiStateCache.avatarRef === 'boolean') {
-            store.uiStateCache.avatarRef = { enabled: !!store.uiStateCache.avatarRef, selectedIds: [] };
-        } else if (!Array.isArray(store.uiStateCache.avatarRef.selectedIds)) {
-            store.uiStateCache.avatarRef.selectedIds = [];
-        }
-    } catch { store.uiStateCache = defaultUiState; }
-    // 清理主题系统遗留的存量数据（theme 字段已无任何消费者）
-    delete store.uiStateCache.theme;
-    localStorage.removeItem('pw_custom_themes_v1');
-
-    try { store.avatarImagesCache = JSON.parse(localStorage.getItem(STORAGE_KEY_AVATAR_IMAGES)) || []; } catch { store.avatarImagesCache = []; }
-
-    // Load Isolated Context Data
-    try {
-        const u = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA_USER));
-        store.userContext = u || { template: defaultYamlTemplate, request: "", result: "", hasResult: false };
-        if(!u) {
-            const oldT = localStorage.getItem(STORAGE_KEY_TEMPLATE);
-            if(oldT && oldT.length > 50) store.userContext.template = oldT;
-        }
-    } catch { store.userContext = { template: defaultYamlTemplate, request: "", result: "", hasResult: false }; }
-
-    try {
-        const n = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA_NPC));
-        store.npcContext = n || { template: defaultNpcTemplate, request: "", result: "", hasResult: false };
-    } catch { store.npcContext = { template: defaultNpcTemplate, request: "", result: "", hasResult: false }; }
-}
-
-function saveData() {
-    safeLocalStorageSet(STORAGE_KEY_HISTORY, JSON.stringify(store.historyCache));
-    safeLocalStorageSet(STORAGE_KEY_PROMPTS, JSON.stringify(store.promptsCache));
-    safeLocalStorageSet(STORAGE_KEY_UI_STATE, JSON.stringify(store.uiStateCache));
-    safeLocalStorageSet(STORAGE_KEY_DATA_USER, JSON.stringify(store.userContext));
-    safeLocalStorageSet(STORAGE_KEY_DATA_NPC, JSON.stringify(store.npcContext));
-}
-
-function saveHistory(item) {
-    const limit = 1000; 
-    const mode = store.uiStateCache.generationMode; // 'user' or 'npc'
-
-    if (!item.title || item.title === "未命名") {
-        const context = getContext();
-        const userName = $('.persona_name').first().text().trim() || "User";
-        const charName = context.characters[context.characterId]?.name || "Char";
-        
-        if (item.data && item.data.type === 'template') {
-            item.title = mode === 'npc' ? `NPC模版 (${charName})` : `User模版 (${charName})`;
-        } else {
-            if (mode === 'npc') {
-                const nameMatch = item.data.resultText.match(/姓名:\s*(.*?)(\n|$)/);
-                const npcName = nameMatch ? nameMatch[1].trim() : "Unknown";
-                item.title = `NPC：${npcName} @ ${charName}`;
-            } else {
-                item.title = `${userName} & ${charName}`;
-            }
-        }
-    }
-    
-    if (!item.data.genType) {
-        if (item.data.type === 'template') {
-            item.data.genType = mode === 'npc' ? 'npc_template' : 'user_template';
-        } else {
-            item.data.genType = mode === 'npc' ? 'npc_persona' : 'user_persona';
-        }
-    }
-
-    store.historyCache.unshift(item);
-    if (store.historyCache.length > limit) store.historyCache = store.historyCache.slice(0, limit);
-    saveData();
-}
-
 function getWiCacheKey() {
     const context = getContext();
     return context.characterId || 'global_no_char'; 
@@ -1411,9 +598,6 @@ function saveWiSelection(bookName, uids) {
     store.wiSelectionCache[charKey][bookName] = uids;
     safeLocalStorageSet(STORAGE_KEY_WI_STATE, JSON.stringify(store.wiSelectionCache));
 }
-
-function saveState(data) { safeLocalStorageSet(STORAGE_KEY_STATE, JSON.stringify(data)); }
-function loadState() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY_STATE)) || {}; } catch { return {}; } }
 
 // 读取独立 API 的请求超时（秒）。优先级：DOM 输入 > 已保存配置 > defaultSettings > 硬编码 300。
 // 做了 30–1800 秒的区间夹取，避免用户写 0 / 几秒这种废值把请求立刻打挂。
@@ -1585,7 +769,6 @@ async function readSSEResponse(res, isAnthropic, onDelta) {
     return fullText;
 }
 
-function saveAvatarImages() { safeLocalStorageSet(STORAGE_KEY_AVATAR_IMAGES, JSON.stringify(store.avatarImagesCache)); }
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
 
 function compressImage(base64, maxSize = 512, quality = 0.7) {
@@ -2699,9 +1882,9 @@ function bindEvents() {
     // Load Main Template logic
     $(document).on('click.pw', '#pw-load-main-template', function() {
         if(confirm("确定要使用默认的 User 主模版吗？这将覆盖当前编辑器内容。")) {
-            $('#pw-template-text').val(defaultYamlTemplate);
-            if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = defaultYamlTemplate;
-            else store.userContext.template = defaultYamlTemplate;
+            $('#pw-template-text').val(DEFAULT_TEMPLATES.user);
+            if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = DEFAULT_TEMPLATES.user;
+            else store.userContext.template = DEFAULT_TEMPLATES.user;
             saveData();
             if(!store.isEditingTemplate) renderTemplateChips();
             toastr.success("已载入 User 主模版");
@@ -2713,7 +1896,7 @@ function bindEvents() {
         const isNpc = store.uiStateCache.generationMode === 'npc';
         const targetName = isNpc ? "NPC" : "User";
         if(confirm(`确定要恢复为默认的 ${targetName} 模版吗？`)) {
-            const fallbackT = isNpc ? defaultNpcTemplate : defaultYamlTemplate;
+            const fallbackT = isNpc ? DEFAULT_TEMPLATES.npc : DEFAULT_TEMPLATES.user;
             $('#pw-template-text').val(fallbackT);
             if (isNpc) store.npcContext.template = fallbackT;
             else store.userContext.template = fallbackT;
@@ -2750,7 +1933,7 @@ function bindEvents() {
 
                 if (useDefault) {
                     const isNpc = store.uiStateCache.generationMode === 'npc';
-                    const fallbackT = isNpc ? defaultNpcTemplate : defaultYamlTemplate;
+                    const fallbackT = isNpc ? DEFAULT_TEMPLATES.npc : DEFAULT_TEMPLATES.user;
                     
                     $('#pw-template-text').val(fallbackT);
                     if (isNpc) store.npcContext.template = fallbackT;
