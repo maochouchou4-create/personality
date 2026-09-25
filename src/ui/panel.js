@@ -48,9 +48,8 @@ export async function openCreatorPopup() {
     if (!currentName) currentName = $('h5#your_name').text().trim();
     if (!currentName) currentName = context.powerUserSettings?.persona_selected || "User";
 
-    const isNpc = store.uiStateCache.generationMode === 'npc';
     const chatHistEnabled = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
-    const activeData = isNpc ? store.npcContext : store.userContext;
+    const activeData = store.userContext;
     
     const charName = getContext().characters[getContext().characterId]?.name || "None";
     
@@ -100,16 +99,8 @@ export async function openCreatorPopup() {
     <!-- Editor View -->
     <div id="pw-view-editor" class="pw-view active">
         <div class="pw-scroll-area">
-            <!-- Mode Switcher -->
-            <div class="pw-info-display mode-switcher">
-                <div class="pw-mode-toggle-group">
-                    <div class="pw-mode-item ${!isNpc ? 'active' : ''}" data-mode="user" title="User 模式">
-                        <i class="fa-solid fa-user"></i> ${currentName}
-                    </div>
-                    <div class="pw-mode-item ${isNpc ? 'active' : ''}" data-mode="npc" title="NPC 模式">
-                        <i class="fa-solid fa-user-secret"></i> NPC
-                    </div>
-                </div>
+            <!-- Load Persona Entry -->
+            <div class="pw-info-display">
                 <div class="pw-load-btn" id="pw-btn-load-current">载入已有人设</div>
             </div>
 
@@ -120,7 +111,6 @@ export async function openCreatorPopup() {
                         <i class="fa-solid ${chipsIcon}" style="margin-left:5px;" title="折叠/展开"></i>
                     </span>
                     <div class="pw-tags-actions">
-                        <span class="pw-tags-edit-toggle" id="pw-load-main-template" style="${isNpc ? '' : 'display:none;'} margin-right:10px;">使用User模版</span>
                         <span class="pw-tags-edit-toggle" id="pw-toggle-edit-template">编辑模版</span>
                     </div>
                 </div>
@@ -134,7 +124,7 @@ export async function openCreatorPopup() {
                             <div class="pw-shortcut-btn" data-key="- "><span>列表</span><span class="code">-</span></div>
                             <div class="pw-shortcut-btn" data-key="\n"><span>换行</span><span class="code">Enter</span></div>
                         </div>
-                        <div class="pw-mini-btn" id="pw-reset-template-small" title="恢复为该模式的默认模版" style="margin-left:auto; padding:2px 8px; font-size:0.8em; border:none; background:transparent; opacity:0.6;"><i class="fa-solid fa-rotate-left"></i></div>
+                        <div class="pw-mini-btn" id="pw-reset-template-small" title="恢复为默认模版" style="margin-left:auto; padding:2px 8px; font-size:0.8em; border:none; background:transparent; opacity:0.6;"><i class="fa-solid fa-rotate-left"></i></div>
                     </div>
                     <textarea id="pw-template-text" class="pw-template-textarea">${activeData.template}</textarea>
                     <div class="pw-template-footer">
@@ -159,7 +149,7 @@ export async function openCreatorPopup() {
             </div>
 
             <textarea id="pw-request" class="pw-textarea pw-auto-height" placeholder="在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...">${activeData.request}</textarea>
-            <button id="pw-btn-gen" class="pw-btn gen"><i class="fa-solid ${chatHistEnabled ? 'fa-comments' : 'fa-wand-magic-sparkles'}"></i> ${chatHistEnabled ? '聊天推断生成' : (isNpc ? '生成 NPC 设定' : '生成 User 设定')}</button>
+            <button id="pw-btn-gen" class="pw-btn gen"><i class="fa-solid ${chatHistEnabled ? 'fa-comments' : 'fa-wand-magic-sparkles'}"></i> ${chatHistEnabled ? '聊天推断生成' : '生成 User 设定'}</button>
 
             <div id="pw-result-area" style="display:${activeData.hasResult ? 'block' : 'none'}; margin-top:15px;">
                 <div class="pw-relative-container">
@@ -185,7 +175,7 @@ export async function openCreatorPopup() {
             </div>
             <div class="pw-footer-group" style="flex:1; justify-content:flex-end; gap: 8px;">
                 <button class="pw-btn wi" id="pw-btn-save-wi">保存至世界书</button>
-                <button class="pw-btn save" id="pw-btn-apply" style="${isNpc ? 'display:none;' : ''}">覆盖当前人设</button>
+                <button class="pw-btn save" id="pw-btn-apply">覆盖当前人设</button>
             </div>
         </div>
     </div>

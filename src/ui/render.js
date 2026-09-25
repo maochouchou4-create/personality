@@ -33,16 +33,14 @@ export function autoBindGreetings() {
 }
 
 export function renderAvatarStrip() {
-    const isNpc = store.uiStateCache.generationMode === 'npc';
     const $strip = $('#pw-avatar-strip');
     if (!$strip.length) return;
     $strip.empty();
     const items = [];
-    if (!isNpc && store.currentUserAvatarBase64) {
+    if (store.currentUserAvatarBase64) {
         items.push({ id: '__user_current__', base64: store.currentUserAvatarBase64, name: 'User 当前头像' });
     }
-    const tagFilter = isNpc ? 'npc' : 'user';
-    store.avatarImagesCache.filter(img => img.tags && img.tags.includes(tagFilter)).forEach(img => items.push(img));
+    store.avatarImagesCache.filter(img => img.tags && img.tags.includes('user')).forEach(img => items.push(img));
     if (items.length === 0) {
         $strip.html('<span style="font-size:0.75em; opacity:0.4; white-space:nowrap;">暂无图片，前往参考页上传</span>');
         return;
@@ -65,7 +63,6 @@ export function renderAvatarMgmt() {
     }
     store.avatarImagesCache.forEach(img => {
         const hasUser = img.tags && img.tags.includes('user');
-        const hasNpc = img.tags && img.tags.includes('npc');
         const $item = $(`
             <div class="pw-avatar-card" data-img-id="${img.id}">
                 <div class="pw-avatar-card-top">
@@ -75,7 +72,6 @@ export function renderAvatarMgmt() {
                 <span class="pw-avatar-card-name" title="点击编辑名称">${img.name || '未命名'}</span>
                 <div class="pw-avatar-card-tags">
                     <span class="pw-avatar-tag ${hasUser ? 'active' : ''}" data-tag="user">User</span>
-                    <span class="pw-avatar-tag ${hasNpc ? 'active' : ''}" data-tag="npc">NPC</span>
                 </div>
             </div>
         `);
@@ -209,18 +205,10 @@ export const renderHistoryList = () => {
     `);
         $el.on('click', function (e) {
             if ($(e.target).closest('.pw-hist-action-btn, .pw-hist-title-input').length) return;
-            
-            // Auto Switch Mode Logic
-            const targetMode = (type === 'npc_template' || type === 'npc_persona' || type === 'npc') ? 'npc' : 'user';
-            const $modeBtn = $(`.pw-mode-item[data-mode="${targetMode}"]`);
-            if (!$modeBtn.hasClass('active')) {
-                $modeBtn.click(); // Trigger click to switch UI
-            }
 
             if (type.includes('template')) {
                 $('#pw-template-text').val(previewText);
-                if(targetMode==='npc') store.npcContext.template = previewText;
-                else store.userContext.template = previewText;
+                store.userContext.template = previewText;
                 saveData();
                 renderTemplateChips();
                 $('.pw-tab[data-tab="editor"]').click();

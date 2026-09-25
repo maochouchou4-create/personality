@@ -78,25 +78,6 @@ export function generateSmartKeywords(name, content, staticTags = []) {
     return [...new Set(rawKeys)].filter(k => k && k.length > 1);
 }
 
-export function extractAllNpcNames(content) {
-    const names = [];
-    const regex = /姓名[:：]\s*(.*?)(\n|$)/g;
-    let m;
-    while ((m = regex.exec(content)) !== null) {
-        const name = m[1].trim();
-        if (name && !names.includes(name)) names.push(name);
-    }
-    return names;
-}
-
-export function generateSmartKeywordsMulti(names, content, staticTags = []) {
-    let allKeys = [...staticTags];
-    for (const name of names) {
-        allKeys.push(...generateSmartKeywords(name, content, []));
-    }
-    return [...new Set(allKeys)].filter(k => k && k.length > 1);
-}
-
 export async function syncToWorldInfoViaHelper(userName, content) {
     if (!window.TavernHelper) return toastr.error(TEXT.TOAST_WI_ERROR);
 
@@ -114,26 +95,10 @@ export async function syncToWorldInfoViaHelper(userName, content) {
     
     if (!targetBook) return toastr.warning(TEXT.TOAST_WI_FAIL);
 
-    let entryTitle = "";
-    let entryKeys = [];
-    const isNpc = store.uiStateCache.generationMode === 'npc';
-
-    if (isNpc) {
-        let npcNames = extractAllNpcNames(content);
-        if (npcNames.length === 0) {
-            const fallback = prompt("无法自动识别 NPC 姓名，请输入：", "路人甲");
-            if (!fallback) return;
-            npcNames.push(fallback);
-        }
-        const displayName = npcNames.join('&');
-        entryTitle = `NPC:${displayName}`;
-        entryKeys = generateSmartKeywordsMulti(npcNames, content, ["NPC"]);
-    } else {
-        const nameMatch = content.match(/姓名:\s*(.*?)(\n|$)/);
-        const finalUserName = nameMatch ? nameMatch[1].trim() : (userName || "User");
-        entryTitle = `USER:${finalUserName}`;
-        entryKeys = generateSmartKeywords(finalUserName, content, ["User"]);
-    }
+    const nameMatch = content.match(/姓名:\s*(.*?)(\n|$)/);
+    const finalUserName = nameMatch ? nameMatch[1].trim() : (userName || "User");
+    const entryTitle = `USER:${finalUserName}`;
+    const entryKeys = generateSmartKeywords(finalUserName, content, ["User"]);
 
     try {
         const entries = await window.TavernHelper.getLorebookEntries(targetBook);

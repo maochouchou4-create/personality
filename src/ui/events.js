@@ -141,70 +141,6 @@ export function bindEvents() {
         }
     });
 
-    // --- Mode Switcher (Pill Style - Isolated Data) ---
-    $(document).on('click.pw', '.pw-mode-item', function() {
-        const mode = $(this).data('mode');
-        if (mode === store.uiStateCache.generationMode) return;
-        
-        // 1. Save current data to context object
-        const curReq = $('#pw-request').val();
-        const curRes = $('#pw-result-text').val();
-        const curTmpl = $('#pw-template-text').val();
-        const hasRes = $('#pw-result-area').is(':visible');
-
-        if (store.uiStateCache.generationMode === 'npc') {
-            store.npcContext = { template: curTmpl, request: curReq, result: curRes, hasResult: hasRes };
-        } else {
-            store.userContext = { template: curTmpl, request: curReq, result: curRes, hasResult: hasRes };
-        }
-        
-        // 2. Switch Mode
-        $('.pw-mode-item').removeClass('active');
-        $(this).addClass('active');
-        store.uiStateCache.generationMode = mode;
-        saveData();
-
-        // 3. Load target data
-        const targetData = mode === 'npc' ? store.npcContext : store.userContext;
-        $('#pw-request').val(targetData.request);
-        $('#pw-result-text').val(targetData.result);
-        $('#pw-template-text').val(targetData.template);
-        
-        if (targetData.hasResult) {
-            $('#pw-result-area').show();
-            $('#pw-request').addClass('minimized');
-        } else {
-            $('#pw-result-area').hide();
-            $('#pw-request').removeClass('minimized');
-        }
-
-        renderTemplateChips();
-
-        // Reset template editing state on mode switch
-        if (store.isEditingTemplate) {
-            store.isEditingTemplate = false;
-            $('#pw-template-editor').hide();
-            $('#pw-template-chips').css('display', 'flex');
-            $('#pw-toggle-edit-template').text("编辑模版").removeClass('editing');
-            $('#pw-template-block-header').find('i').show();
-            $('#pw-btn-apply-template').hide();
-        }
-        $('#pw-request').attr('placeholder', '在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...');
-
-        // 4. Update UI Buttons
-        if (mode === 'npc') {
-            $('#pw-btn-apply').hide();
-            $('#pw-load-main-template').show();
-            toastr.info("已切换至 NPC 模式");
-        } else {
-            $('#pw-btn-apply').show();
-            $('#pw-load-main-template').hide();
-            toastr.info("已切换至 User 模式");
-        }
-        updateChatInferBadge();
-        renderAvatarStrip();
-    });
-
     // [Fix 10] Preset Select Change Logic
     $(document).on('change.pw', '#pw-preset-select', function() {
         const val = $(this).val();
@@ -269,7 +205,6 @@ export function bindEvents() {
     $(document).on('click.pw', '#pw-toggle-edit-template', () => {
         store.isEditingTemplate = !store.isEditingTemplate;
         const tmpl = getCurrentTemplate();
-        const isNpc = store.uiStateCache.generationMode === 'npc';
         
         if (store.isEditingTemplate) {
             $('#pw-template-text').val(tmpl);
@@ -287,7 +222,7 @@ export function bindEvents() {
             $('#pw-toggle-edit-template').text("编辑模版").removeClass('editing');
             $('#pw-template-block-header').find('i').show();
             $('#pw-request').attr('placeholder', '在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...');
-            $('#pw-btn-gen').html(`<i class="fa-solid fa-wand-magic-sparkles"></i> ${isNpc ? '生成 NPC 设定' : '生成 User 设定'}`);
+            $('#pw-btn-gen').html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
             $('#pw-btn-apply-template').hide();
             $('#pw-avatar-ref-row, #pw-chat-infer-row').slideDown(200);
         }
@@ -309,30 +244,15 @@ export function bindEvents() {
         saveData(); 
     });
 
-    // Load Main Template logic
-    $(document).on('click.pw', '#pw-load-main-template', function() {
-        if(confirm("确定要使用默认的 User 主模版吗？这将覆盖当前编辑器内容。")) {
-            $('#pw-template-text').val(DEFAULT_TEMPLATES.user);
-            if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = DEFAULT_TEMPLATES.user;
-            else store.userContext.template = DEFAULT_TEMPLATES.user;
-            saveData();
-            if(!store.isEditingTemplate) renderTemplateChips();
-            toastr.success("已载入 User 主模版");
-        }
-    });
-
     // Reset Template Small Button
     $(document).on('click.pw', '#pw-reset-template-small', function() {
-        const isNpc = store.uiStateCache.generationMode === 'npc';
-        const targetName = isNpc ? "NPC" : "User";
-        if(confirm(`确定要恢复为默认的 ${targetName} 模版吗？`)) {
-            const fallbackT = isNpc ? DEFAULT_TEMPLATES.npc : DEFAULT_TEMPLATES.user;
+        if(confirm("确定要恢复为默认的 User 模版吗？")) {
+            const fallbackT = DEFAULT_TEMPLATES.user;
             $('#pw-template-text').val(fallbackT);
-            if (isNpc) store.npcContext.template = fallbackT;
-            else store.userContext.template = fallbackT;
+            store.userContext.template = fallbackT;
             saveData();
             if(!store.isEditingTemplate) renderTemplateChips();
-            toastr.success(`已恢复默认 ${targetName} 模版`);
+            toastr.success("已恢复默认 User 模版");
         }
     });
 
@@ -362,15 +282,13 @@ export function bindEvents() {
                 const useDefault = confirm("请选择模版来源：\n\n点击【确定】使用内置默认模版（推荐）\n点击【取消】生成全新的通用模版");
 
                 if (useDefault) {
-                    const isNpc = store.uiStateCache.generationMode === 'npc';
-                    const fallbackT = isNpc ? DEFAULT_TEMPLATES.npc : DEFAULT_TEMPLATES.user;
+                    const fallbackT = DEFAULT_TEMPLATES.user;
                     
                     $('#pw-template-text').val(fallbackT);
-                    if (isNpc) store.npcContext.template = fallbackT;
-                    else store.userContext.template = fallbackT;
+                    store.userContext.template = fallbackT;
                     saveData();
                     renderTemplateChips();
-                    toastr.success(`已恢复默认${isNpc ? 'NPC' : 'User'}模板`);
+                    toastr.success("已恢复默认 User 模板");
                     
                     store.isProcessing = false;
                     $btn.html(originalText);
@@ -392,8 +310,7 @@ export function bindEvents() {
             if (generatedTemplate) {
                 $('#pw-template-text').val(generatedTemplate);
                 
-                if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = generatedTemplate;
-                else store.userContext.template = generatedTemplate;
+                store.userContext.template = generatedTemplate;
                 saveData();
 
                 renderTemplateChips();
@@ -415,8 +332,7 @@ export function bindEvents() {
     $(document).on('click.pw', '#pw-save-template', () => {
         const val = $('#pw-template-text').val();
         
-        if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = val;
-        else store.userContext.template = val;
+        store.userContext.template = val;
         saveData();
         
         saveHistory({ 
@@ -436,9 +352,8 @@ export function bindEvents() {
         $('#pw-toggle-edit-template').text("编辑模版").removeClass('editing');
         $('#pw-template-block-header').find('i').show();
         $('#pw-btn-apply-template').hide();
-        const isNpc = store.uiStateCache.generationMode === 'npc';
         $('#pw-request').attr('placeholder', '在此输入要求，或点击上方模版块插入参考结构（无需全部填满）...');
-        $('#pw-btn-gen').html(`<i class="fa-solid fa-wand-magic-sparkles"></i> ${isNpc ? '生成 NPC 设定' : '生成 User 设定'}`);
+        $('#pw-btn-gen').html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
         toastr.success("模版已更新并保存至记录");
     });
 
@@ -450,8 +365,7 @@ export function bindEvents() {
             return;
         }
         $('#pw-template-text').val(resultText);
-        if (store.uiStateCache.generationMode === 'npc') store.npcContext.template = resultText;
-        else store.userContext.template = resultText;
+        store.userContext.template = resultText;
         saveData();
         renderTemplateChips();
         toastr.success("已将结果应用到模版编辑器，请确认后点击「保存模版」");
@@ -528,15 +442,9 @@ export function bindEvents() {
             const curRes = $('#pw-result-text').val();
             const hasRes = $('#pw-result-area').is(':visible');
 
-            if (store.uiStateCache.generationMode === 'npc') {
-                store.npcContext.request = curReq;
-                store.npcContext.result = curRes;
-                store.npcContext.hasResult = hasRes;
-            } else {
-                store.userContext.request = curReq;
-                store.userContext.result = curRes;
-                store.userContext.hasResult = hasRes;
-            }
+            store.userContext.request = curReq;
+            store.userContext.result = curRes;
+            store.userContext.hasResult = hasRes;
 
             saveData(); 
             
@@ -825,13 +733,12 @@ export function bindEvents() {
             console.error(e);
             toastr.error(e.message); 
         } finally { 
-            const isNpc = store.uiStateCache.generationMode === 'npc';
             if (isTemplateGen) {
                 $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成模版');
             } else if (chatInferOn) {
                 $btn.prop('disabled', false).html('<i class="fa-solid fa-comments"></i> 聊天推断生成');
             } else {
-                $btn.prop('disabled', false).html(isNpc ? '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 NPC 设定' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
+                $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
             }
             store.isProcessing = false;
         }
@@ -840,7 +747,6 @@ export function bindEvents() {
     $(document).on('click.pw', '#pw-load-overlay-close', () => $('#pw-load-overlay').animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); }));
 
     $(document).on('click.pw', '#pw-btn-load-current', async function() {
-        const isNpc = store.uiStateCache.generationMode === 'npc';
         const $overlay = $('#pw-load-overlay');
         const $content = $('#pw-load-overlay-content');
 
@@ -908,43 +814,35 @@ export function bindEvents() {
             });
         };
 
-        if (isNpc) {
-            $('#pw-load-overlay-title').text('载入世界书 NPC 人设');
-            $content.html('<div style="text-align:center; padding:20px; opacity:0.6;"><i class="fas fa-spinner fa-spin"></i> 正在读取世界书...</div>');
-            $overlay.css('display', 'flex').css('opacity', 0).animate({opacity: 1}, 200);
-            const charName = getContext().characters[getContext().characterId]?.name || '';
-            await showWiSelector(charName);
-        } else {
-            const userPersona = getActivePersonaDescription();
-            const hasUserPersona = !!userPersona;
+        const userPersona = getActivePersonaDescription();
+        const hasUserPersona = !!userPersona;
 
-            $('#pw-load-overlay-title').text('载入已有人设');
-            $content.html(`
-                <div style="display:flex; flex-direction:column; gap:10px;">
-                    <span style="opacity:0.7; font-size:0.9em;">选择载入来源</span>
-                    <div style="display:flex; gap:8px; width:100%;">
-                        <button class="pw-btn primary pw-load-choice" data-choice="user" style="flex:1; padding:10px; font-size:0.95em;${!hasUserPersona ? ' opacity:0.4; cursor:not-allowed;' : ''}" ${!hasUserPersona ? 'disabled title="未检测到当前 User 人设"' : ''}>
-                            <i class="fa-solid fa-user"></i> User 人设
-                        </button>
-                        <button class="pw-btn primary pw-load-choice" data-choice="worldbook" style="flex:1; padding:10px; font-size:0.95em;">
-                            <i class="fa-solid fa-book-atlas"></i> 世界书条目
-                        </button>
-                    </div>
-                </div>`);
+        $('#pw-load-overlay-title').text('载入已有人设');
+        $content.html(`
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <span style="opacity:0.7; font-size:0.9em;">选择载入来源</span>
+                <div style="display:flex; gap:8px; width:100%;">
+                    <button class="pw-btn primary pw-load-choice" data-choice="user" style="flex:1; padding:10px; font-size:0.95em;${!hasUserPersona ? ' opacity:0.4; cursor:not-allowed;' : ''}" ${!hasUserPersona ? 'disabled title="未检测到当前 User 人设"' : ''}>
+                        <i class="fa-solid fa-user"></i> User 人设
+                    </button>
+                    <button class="pw-btn primary pw-load-choice" data-choice="worldbook" style="flex:1; padding:10px; font-size:0.95em;">
+                        <i class="fa-solid fa-book-atlas"></i> 世界书条目
+                    </button>
+                </div>
+            </div>`);
 
-            $overlay.css('display', 'flex').css('opacity', 0).animate({opacity: 1}, 200);
+        $overlay.css('display', 'flex').css('opacity', 0).animate({opacity: 1}, 200);
 
-            $content.find('.pw-load-choice').on('click', async function() {
-                const choice = $(this).data('choice');
-                if (choice === 'user') {
-                    applyContent(userPersona);
-                } else {
-                    $content.html('<div style="text-align:center; padding:20px; opacity:0.6;"><i class="fas fa-spinner fa-spin"></i> 正在读取世界书...</div>');
-                    const userName = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || '';
-                    await showWiSelector(userName);
-                }
-            });
-        }
+        $content.find('.pw-load-choice').on('click', async function() {
+            const choice = $(this).data('choice');
+            if (choice === 'user') {
+                applyContent(userPersona);
+            } else {
+                $content.html('<div style="text-align:center; padding:20px; opacity:0.6;"><i class="fas fa-spinner fa-spin"></i> 正在读取世界书...</div>');
+                const userName = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || '';
+                await showWiSelector(userName);
+            }
+        });
     });
 
     $(document).on('click.pw', '#pw-btn-save-wi', async function () {
@@ -1200,7 +1098,7 @@ export function bindEvents() {
                     id: generateId(),
                     name: file.name.replace(/\.[^.]+$/, ''),
                     base64: base64,
-                    tags: ['user', 'npc'],
+                    tags: ['user'],
                     addedAt: Date.now()
                 });
                 addedCount++;
@@ -1404,7 +1302,6 @@ export function bindEvents() {
 
     function updateChatInferBadge() {
         const enabled = store.uiStateCache.chatHistory && store.uiStateCache.chatHistory.enabled;
-        const isNpc = store.uiStateCache.generationMode === 'npc';
         const $btn = $('#pw-btn-gen');
         const $refineBtn = $('#pw-btn-refine');
         const $refineInput = $('#pw-refine-input');
@@ -1415,7 +1312,7 @@ export function bindEvents() {
             $refineBtn.attr('title', '基于聊天记录更新人设');
             $refineInput.attr('placeholder', '输入更新方向，或留空直接基于聊天记录更新...');
         } else {
-            if (!store.isEditingTemplate) $btn.html(isNpc ? '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 NPC 设定' : '<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
+            if (!store.isEditingTemplate) $btn.html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
             $refineBtn.find('.pw-refine-btn-text').text('润色');
             $refineBtn.find('i').removeClass('fa-rotate').addClass('fa-magic');
             $refineBtn.attr('title', '执行润色');

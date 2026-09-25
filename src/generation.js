@@ -72,21 +72,13 @@ export function wrapInputForSafety(request, oldText, isRefine) {
     const safeRequest = request.replace(/"/g, "'");
 
     if (isRefine) {
-        const isMultiNpc = oldText && oldText.includes('\n---\n');
-        const multiNpcHint = isMultiNpc ? `
-[MULTI_NPC_DOCUMENT]:
-The Target Buffer contains MULTIPLE NPC profiles separated by "---".
-Follow the user's instruction exactly — add, remove, modify, or rewrite NPCs as requested.
-Output the final result with each NPC separated by "---".
-` : '';
-
         return `
 [SYSTEM_OP: DATA_REVISION_PATCH]
 [TARGET_BUFFER]:
 """
 ${oldText}
 """
-${multiNpcHint}[PATCH_INSTRUCTION]:
+[PATCH_INSTRUCTION]:
 The user has submitted a revision patch: "${safeRequest}"
 [EXECUTION]:
 Apply this patch to the Target Buffer. Rewrite the content to satisfy the instruction.
@@ -199,7 +191,6 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
     const currentText = data.currentText || "";
     const requestText = data.request || "";
     
-    const isNpcMode = store.uiStateCache.generationMode === 'npc';
     const chatHistConf = store.uiStateCache.chatHistory || {};
     const chatInferEnabled = chatHistConf.enabled && !isTemplateMode;
 
@@ -209,8 +200,6 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
         const filteredResult = await fetchChatHistoryFiltered();
         rawChatHistory = filteredResult.text;
         rawUserPersona = getActivePersonaDescription();
-    } else if (isNpcMode && !isTemplateMode) {
-        rawUserPersona = getActivePersonaDescription();
     }
 
     const wrappedCharInfo = wrapAsXiTaReference(rawCharInfo, `Entity Profile: ${charName}`);
@@ -219,7 +208,7 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
     const wrappedTags = wrapAsXiTaReference(getCurrentTemplate(), "Schema Definition");
     const wrappedInput = wrapInputForSafety(requestText, currentText, data.mode === 'refine');
     
-    const wrappedUserPersona = (isNpcMode || chatInferEnabled) ? wrapAsXiTaReference(rawUserPersona, `User Profile: ${currentName}`) : "";
+    const wrappedUserPersona = chatInferEnabled ? wrapAsXiTaReference(rawUserPersona, `User Profile: ${currentName}`) : "";
     const wrappedChatHistory = chatInferEnabled ? wrapAsXiTaReference(rawChatHistory, `Chat History Reference`) : "";
 
     // [Fix 10] Use selected preset logic
@@ -246,12 +235,10 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
     if (isTemplateMode) {
         const isRefine = data.mode === 'refine';
 
-        let storedPrompt = isNpcMode
-            ? (store.promptsCache.npcTemplateGen || '')
-            : (store.promptsCache.templateGen || '');
-        const defaultPrompt = isNpcMode ? DEFAULT_PROMPTS.npcTemplateGen : DEFAULT_PROMPTS.templateGen;
+        const storedPrompt = store.promptsCache.templateGen || '';
+        const defaultPrompt = DEFAULT_PROMPTS.templateGen;
 
-        let basePrompt = (storedPrompt && storedPrompt.includes('{{userRequirements}}'))
+        const basePrompt = (storedPrompt && storedPrompt.includes('{{userRequirements}}'))
             ? storedPrompt
             : defaultPrompt;
 
@@ -275,18 +262,15 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
 
         prefillContent = "```yaml\n";
     } else if (chatInferEnabled) {
-        const targetName = isNpcMode ? charName : currentName;
         const existingBlock = (currentText && currentText.trim().length > 20)
-            ? wrapAsXiTaReference(currentText, `Existing Profile: ${targetName}`)
+            ? wrapAsXiTaReference(currentText, `Existing Profile: ${currentName}`)
             : '';
-        let basePrompt = isNpcMode
-            ? (store.promptsCache.npcChatInfer || DEFAULT_PROMPTS.npcChatInfer)
-            : (store.promptsCache.chatInfer || DEFAULT_PROMPTS.chatInfer);
+        const basePrompt = store.promptsCache.chatInfer || DEFAULT_PROMPTS.chatInfer;
 
         userMessageContent = basePrompt
             .replace(/{{user}}/g, currentName)
             .replace(/{{char}}/g, charName)
-            .replace(/{{targetName}}/g, targetName)
+            .replace(/{{targetName}}/g, currentName)
             .replace(/{{charInfo}}/g, wrappedCharInfo)
             .replace(/{{greetings}}/g, wrappedGreetings)
             .replace(/{{template}}/g, wrappedTags)
@@ -295,9 +279,7 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
             .replace(/{{userPersona}}/g, wrappedUserPersona)
             .replace(/{{chatHistory}}/g, wrappedChatHistory);
     } else {
-        let basePrompt = isNpcMode
-            ? (store.promptsCache.npcGen || DEFAULT_PROMPTS.npcGen)
-            : (store.promptsCache.personaGen || DEFAULT_PROMPTS.personaGen);
+        const basePrompt = store.promptsCache.personaGen || DEFAULT_PROMPTS.personaGen;
         
         userMessageContent = basePrompt
             .replace(/{{user}}/g, currentName)
@@ -309,8 +291,6 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
             .replace(/{{userPersona}}/g, wrappedUserPersona)
             .replace(/{{chatHistory}}/g, wrappedChatHistory);
     }
-
-    // NPC多角色指令已在 DEFAULT_PROMPTS.npcGen 中包含，无需运行时注入
 
     // Collect selected avatar images (auto-enabled when any image is selected)
     const avatarConf = store.uiStateCache.avatarRef || {};
@@ -326,7 +306,7 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
         }
     }
 
-    console.log(`[PW] Sending Prompt... Mode: ${isNpcMode ? 'NPC' : 'User'}${selectedAvatarImages.length ? ` [+${selectedAvatarImages.length} images]` : ''}`);
+    console.log(`[PW] Sending Prompt...${selectedAvatarImages.length ? ` [+${selectedAvatarImages.length} images]` : ''}`);
     
     let responseContent = "";
     const controller = new AbortController();
@@ -352,9 +332,7 @@ export async function runGeneration(data, apiConfig, isTemplateMode = false) {
 
         if (selectedAvatarImages.length > 0) {
             const lifecycleHint = `For lifecycle / timeline fields whose stage the character has NOT yet reached (e.g. a 24-year-old's "中年_35至今" / "老年" stage, an unborn descendant, a future plot beat), you MAY use a narrative-meaningful placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」 — this applies generically to ANY user template's time-locked fields. Bare "未知" / "N/A" without a contextual reason is still forbidden.`;
-            const avatarHint = isNpcMode
-                ? `[Reference Image(s): The above ${selectedAvatarImages.length > 1 ? 'images are' : 'image is'} provided as visual reference for the NPC character(s). Use them to FULLY populate appearance-related fields (hair, eyes, skin tone, face shape, build, typical outfit, age impression, etc.) — appearance fields MUST NOT remain blank. For all non-appearance fields, still output concrete, context-consistent values; the final YAML MUST have NO empty fields. ${lifecycleHint}]`
-                : `[User Avatar Image(s): The above ${selectedAvatarImages.length > 1 ? 'images are' : 'image is'} the user's avatar/profile pictures. Use them to FULLY populate appearance-related fields (hair, eyes, skin tone, face shape, build, typical outfit, age impression, etc.) — appearance fields MUST NOT remain blank. For fields not visible in the image, still produce reasonable, context-consistent values based on chat history, source materials, and the overall persona; the final YAML MUST have NO empty fields. ${lifecycleHint}]`;
+            const avatarHint = `[User Avatar Image(s): The above ${selectedAvatarImages.length > 1 ? 'images are' : 'image is'} the user's avatar/profile pictures. Use them to FULLY populate appearance-related fields (hair, eyes, skin tone, face shape, build, typical outfit, age impression, etc.) — appearance fields MUST NOT remain blank. For fields not visible in the image, still produce reasonable, context-consistent values based on chat history, source materials, and the overall persona; the final YAML MUST have NO empty fields. ${lifecycleHint}]`;
             const contentBlocks = [];
             selectedAvatarImages.forEach(b64 => {
                 contentBlocks.push({ type: "image_url", image_url: { url: b64 } });

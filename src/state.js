@@ -14,7 +14,6 @@ const STORAGE_KEY_PROMPTS = 'pw_prompts_v21_restore_edit';
 export const STORAGE_KEY_WI_STATE = 'pw_wi_selection_v1';
 const STORAGE_KEY_UI_STATE = 'pw_ui_state_v4_preset';          
 const STORAGE_KEY_DATA_USER = 'pw_data_user_v1'; 
-const STORAGE_KEY_DATA_NPC = 'pw_data_npc_v1';
 export const STORAGE_KEY_PINNED_BOOKS = 'pw_pinned_books_v1';
 const STORAGE_KEY_AVATAR_IMAGES = 'pw_avatar_images_v1';
 
@@ -22,13 +21,9 @@ export const store = {
     historyCache: [],
     promptsCache: {
         templateGen: DEFAULT_PROMPTS.templateGen,
-        npcTemplateGen: DEFAULT_PROMPTS.npcTemplateGen,
         templateRefine: DEFAULT_PROMPTS.templateGen,
-        npcTemplateRefine: DEFAULT_PROMPTS.npcTemplateGen,
         personaGen: DEFAULT_PROMPTS.personaGen,
-        npcGen: DEFAULT_PROMPTS.npcGen,
         chatInfer: DEFAULT_PROMPTS.chatInfer,
-        npcChatInfer: DEFAULT_PROMPTS.npcChatInfer,
         initial: FALLBACK_SYSTEM_PROMPT
     },
     availableWorldBooks: [],
@@ -36,18 +31,17 @@ export const store = {
     isProcessing: false,
     currentGreetingsList: [],
     wiSelectionCache: {},
-    uiStateCache: { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } },
-    avatarImagesCache: [], // [{id, name, base64, tags:['user'|'npc'], addedAt}]
+    uiStateCache: { templateExpanded: true, generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } },
+    avatarImagesCache: [], // [{id, name, base64, tags:['user'], addedAt}]
     currentUserAvatarBase64: null, // pre-loaded on panel open
     historyPage: 1,
     lastRefineRequest: "",
     userContext: { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false },
-    npcContext: { template: DEFAULT_TEMPLATES.npc, request: "", result: "", hasResult: false },
     currentDiffBlocks: [],
 };
 
 export const getCurrentTemplate = () => {
-    return store.uiStateCache.generationMode === 'npc' ? store.npcContext.template : store.userContext.template;
+    return store.userContext.template;
 }
 
 // ============================================================================
@@ -108,28 +102,24 @@ export function loadData() {
         };
         store.promptsCache = {
             templateGen: migrateTemplatePrompt(p && p.templateGen, DEFAULT_PROMPTS.templateGen),
-            npcTemplateGen: migrateTemplatePrompt(p && p.npcTemplateGen, DEFAULT_PROMPTS.npcTemplateGen),
             templateRefine: DEFAULT_PROMPTS.templateGen,
-            npcTemplateRefine: DEFAULT_PROMPTS.npcTemplateGen,
             personaGen: migrateGenPrompt(p && p.personaGen, DEFAULT_PROMPTS.personaGen, '[Task: Generate/Refine User Profile]'),
-            npcGen: migrateGenPrompt(p && p.npcGen, DEFAULT_PROMPTS.npcGen, '[Task: Generate NPC Profile(s)]'),
             chatInfer: migrateChatInferPrompt(p && p.chatInfer, DEFAULT_PROMPTS.chatInfer),
-            npcChatInfer: migrateChatInferPrompt(p && p.npcChatInfer, DEFAULT_PROMPTS.npcChatInfer),
             initial: (p && p.initial) ? p.initial : FALLBACK_SYSTEM_PROMPT
         };
     } catch { 
         store.promptsCache = { 
-            templateGen: DEFAULT_PROMPTS.templateGen, npcTemplateGen: DEFAULT_PROMPTS.npcTemplateGen,
-            templateRefine: DEFAULT_PROMPTS.templateGen, npcTemplateRefine: DEFAULT_PROMPTS.npcTemplateGen,
-            personaGen: DEFAULT_PROMPTS.personaGen, npcGen: DEFAULT_PROMPTS.npcGen, 
-            chatInfer: DEFAULT_PROMPTS.chatInfer, npcChatInfer: DEFAULT_PROMPTS.npcChatInfer,
+            templateGen: DEFAULT_PROMPTS.templateGen,
+            templateRefine: DEFAULT_PROMPTS.templateGen,
+            personaGen: DEFAULT_PROMPTS.personaGen,
+            chatInfer: DEFAULT_PROMPTS.chatInfer,
             initial: FALLBACK_SYSTEM_PROMPT 
         }; 
     }
     try { store.wiSelectionCache = JSON.parse(localStorage.getItem(STORAGE_KEY_WI_STATE)) || {}; } catch { store.wiSelectionCache = {}; }
     
     // [Updated] Load UI State with Preset info + chatHistory config
-    const defaultUiState = { templateExpanded: true, generationMode: 'user', generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
+    const defaultUiState = { templateExpanded: true, generationPreset: 'current', avatarRef: { enabled: false, selectedIds: [] }, chatHistory: { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] } };
     try {
         store.uiStateCache = JSON.parse(localStorage.getItem(STORAGE_KEY_UI_STATE)) || defaultUiState;
         if (!store.uiStateCache.chatHistory) store.uiStateCache.chatHistory = { enabled: false, preset: '20', floorFrom: '', floorTo: '', excludeTags: [], includeTags: [] };
@@ -154,11 +144,6 @@ export function loadData() {
             if(oldT && oldT.length > 50) store.userContext.template = oldT;
         }
     } catch { store.userContext = { template: DEFAULT_TEMPLATES.user, request: "", result: "", hasResult: false }; }
-
-    try {
-        const n = JSON.parse(localStorage.getItem(STORAGE_KEY_DATA_NPC));
-        store.npcContext = n || { template: DEFAULT_TEMPLATES.npc, request: "", result: "", hasResult: false };
-    } catch { store.npcContext = { template: DEFAULT_TEMPLATES.npc, request: "", result: "", hasResult: false }; }
 }
 
 export function saveData() {
@@ -166,12 +151,10 @@ export function saveData() {
     safeLocalStorageSet(STORAGE_KEY_PROMPTS, JSON.stringify(store.promptsCache));
     safeLocalStorageSet(STORAGE_KEY_UI_STATE, JSON.stringify(store.uiStateCache));
     safeLocalStorageSet(STORAGE_KEY_DATA_USER, JSON.stringify(store.userContext));
-    safeLocalStorageSet(STORAGE_KEY_DATA_NPC, JSON.stringify(store.npcContext));
 }
 
 export function saveHistory(item) {
     const limit = 1000; 
-    const mode = store.uiStateCache.generationMode; // 'user' or 'npc'
 
     if (!item.title || item.title === "未命名") {
         const context = getContext();
@@ -179,24 +162,14 @@ export function saveHistory(item) {
         const charName = context.characters[context.characterId]?.name || "Char";
         
         if (item.data && item.data.type === 'template') {
-            item.title = mode === 'npc' ? `NPC模版 (${charName})` : `User模版 (${charName})`;
+            item.title = `User模版 (${charName})`;
         } else {
-            if (mode === 'npc') {
-                const nameMatch = item.data.resultText.match(/姓名:\s*(.*?)(\n|$)/);
-                const npcName = nameMatch ? nameMatch[1].trim() : "Unknown";
-                item.title = `NPC：${npcName} @ ${charName}`;
-            } else {
-                item.title = `${userName} & ${charName}`;
-            }
+            item.title = `${userName} & ${charName}`;
         }
     }
     
     if (!item.data.genType) {
-        if (item.data.type === 'template') {
-            item.data.genType = mode === 'npc' ? 'npc_template' : 'user_template';
-        } else {
-            item.data.genType = mode === 'npc' ? 'npc_persona' : 'user_persona';
-        }
+        item.data.genType = item.data.type === 'template' ? 'user_template' : 'user_persona';
     }
 
     store.historyCache.unshift(item);
