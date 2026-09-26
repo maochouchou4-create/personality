@@ -1,28 +1,36 @@
-// DEFAULT_TEMPLATES.user 的结构契约：顶层块清单与顺序、每块叶子数上限、{{user}} 占位符、可解析性。
+// DEFAULT_TEMPLATES.user 的结构契约：顶层块清单与顺序、每块叶子字面清单、{{user}} 占位符、可解析性。
 // 只测结构不测内容语义——正文是提示词工程的常态迭代区，逐字断言会让每次调优都变红。
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_TEMPLATES } from "../src/prompts.js";
 import { parseYamlToBlocks } from "../src/yaml.js";
 
-// 顶层块顺序即展示顺序。基本信息/外貌/性格/背景/喜恶/NSFW 六块与 curator 的 base_blocks 对齐；
-// 「连接」是默认模板独有的回退增补（零策展素材时保底人设与世界的关联），不进 base_blocks。
+// 顶层块顺序即展示顺序，七块与 curator 的 base_blocks 对齐。
 // 增删块须同批改此处与 src/prompts.js 两处。
 const EXPECTED_BLOCKS = ["基本信息", "外貌", "性格", "背景", "连接", "喜恶", "NSFW"];
-// 叶子数上限来自「LEAN BY DEFAULT」：单块超过 4 项即回到胖模板的老路。
-const MAX_LEAVES_PER_BLOCK = 4;
+// 每块叶子字面清单（结构钉死，不测值）。增删叶须同批改 src/prompts.js 的模板正文。
+const EXPECTED_LEAVES = {
+    基本信息: ["姓名", "年龄", "性别", "身份", "自称", "对他人的称呼"],
+    外貌: ["概貌", "标志性特征", "穿着习惯"],
+    性格: ["核心特质", "表里反差", "情绪反应", "小动作习惯", "说话风格", "口头禅", "底线与禁忌"],
+    背景: ["来历一句话", "现状"],
+    连接: ["与当前世界的关联"],
+    喜恶: ["喜欢", "讨厌"],
+    NSFW: ["基本倾向", "禁忌底线"]
+};
 
 test("顶层块恰为既定清单且顺序一致", () => {
     const blocks = parseYamlToBlocks(DEFAULT_TEMPLATES.user);
     assert.deepEqual([...blocks.keys()], EXPECTED_BLOCKS);
 });
 
-test("每块叶子数在 1-4 之间", () => {
+test("每块叶子恰为既定清单", () => {
     const blocks = parseYamlToBlocks(DEFAULT_TEMPLATES.user);
     for (const name of EXPECTED_BLOCKS) {
-        const leaves = blocks.get(name).split("\n").filter((line) => line.trim().length > 0);
-        assert.ok(leaves.length >= 1, `${name} 无叶子`);
-        assert.ok(leaves.length <= MAX_LEAVES_PER_BLOCK, `${name} 叶子数 ${leaves.length} 超过上限`);
+        const leaves = blocks.get(name).split("\n")
+            .map((line) => { const m = line.match(/^\s*([^:：]+)[:：]/); return m ? m[1].trim() : null; })
+            .filter(Boolean);
+        assert.deepEqual(leaves, EXPECTED_LEAVES[name], `${name} 的叶子清单不符`);
     }
 });
 
