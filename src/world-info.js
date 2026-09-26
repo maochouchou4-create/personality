@@ -7,6 +7,7 @@ import { saveSettingsDebounced, default_user_avatar, getRequestHeaders } from ".
 import { findPersona } from "../../../../scripts/utils.js";
 import { initPersona, setUserAvatar, getUserAvatars, user_avatar } from "../../../../scripts/personas.js";
 import { power_user } from "../../../../scripts/power-user.js";
+import { createWorldInfoEntry, reloadEditor } from "../../../../scripts/world-info.js";
 import { store, safeLocalStorageSet, STORAGE_KEY_WI_STATE, STORAGE_KEY_PINNED_BOOKS } from "./state.js";
 import { TEXT } from "./strings.js";
 import { error as logError, warn as logWarn } from "./log.js";
@@ -147,29 +148,17 @@ export async function syncPersonaToWorldInfo(userName, content) {
             existingEntry.key = entryKeys;
             existingEntry.disable = false;
         } else {
-            const uid = entries.reduce((m, e) => Math.max(m, Number(e.uid) || 0), -1) + 1;
-            const displayIndex = entries.reduce((m, e) => Math.max(m, Number(e.displayIndex) || 0), -1) + 1;
-            // 字段全集照宿主 newWorldInfoEntryTemplate 形态（缺字段会让编辑器/保存链行为未定义）
-            data.entries[String(uid)] = {
-                uid, displayIndex,
-                addMemo: true, automationId: "", caseSensitive: null,
-                comment: entryTitle, constant: false, content,
-                cooldown: 0, delay: 0, delayUntilRecursion: false,
-                depth: 4, disable: false,
-                excludeRecursion: false, preventRecursion: false,
-                group: "", groupOverride: false, groupWeight: 100,
-                ignoreBudget: false, key: entryKeys, keysecondary: [],
-                matchCharacterDepthPrompt: false, matchCharacterDescription: false,
-                matchCharacterPersonality: false, matchCreatorNotes: false,
-                matchPersonaDescription: false, matchScenario: false,
-                matchWholeWords: null, order: 100, outletName: "",
-                position: 0, probability: 100, role: null,
-                scanDepth: null, selective: true, selectiveLogic: 0,
-                sticky: 0, triggers: [], useGroupScoring: null,
-                useProbability: true, vectorized: false,
-            };
+            // 条目创建走宿主正规 helper（uid 分配＋字段模板由宿主维护，宿主升级零跟进）；
+            // 模板不含 displayIndex，自设 max+1 保证编辑器排序稳定（宿主排序回退 uid，:2394）
+            const entry = createWorldInfoEntry(targetBook, data);
+            if (!entry) throw new Error("无法为新条目分配 uid");
+            entry.comment = entryTitle;
+            entry.content = content;
+            entry.key = entryKeys;
+            entry.displayIndex = entries.reduce((m, e) => Math.max(m, Number(e.displayIndex) || 0), -1) + 1;
         }
         await getContext().saveWorldInfo(targetBook, data, true);
+        reloadEditor(targetBook); // 编辑器开着才刷新，内部自判；不刷会导致「存上了但界面没变」
         toastr.success(TEXT.TOAST_WI_SUCCESS(targetBook, entryTitle) + `\n触发词: ${entryKeys.join(', ')}`);
     } catch (e) {
         logError("World Info Sync Error:", e);

@@ -41,3 +41,9 @@ export const power_user = {
 export function callPopup() {
     return Promise.resolve("");
 }
+
+export function createWorldInfoEntry() {
+    return undefined;
+}
+
+export function reloadEditor() {}
