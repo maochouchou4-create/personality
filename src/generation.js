@@ -5,7 +5,7 @@ import { store, loadData } from "./state.js";
 import { getCharacterInfoText } from "./st-data.js";
 import { getContextWorldBooks, loadWiSelection, getWorldBookEntries } from "./world-info.js";
 import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse } from "./api.js";
-import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
+import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES } from "./prompts.js";
 import { parseYamlToBlocks } from "./yaml.js";
 import { getContext } from "../../../../extensions.js";
 import { log as logInfo, warn as logWarn, error as logError } from "./log.js";
@@ -396,13 +396,10 @@ export async function runGeneration(data, apiConfig) {
     const wrappedGreetings = wrapAsXiTaReference(rawGreetings, "Init Sequence");
     const wrappedInput = wrapInputForSafety(requestText, currentText, isRefine);
 
-    // [Fix 10] Use selected preset logic
     let activeSystemPrompt = getRealSystemPrompt(store.uiStateCache.generationPreset);
 
-    if (!activeSystemPrompt && store.uiStateCache.generationPreset !== 'pure') {
-        activeSystemPrompt = FALLBACK_SYSTEM_PROMPT.replace(/{{user}}/g, currentName);
-    } else if (activeSystemPrompt) {
-        // [Fix 9] Prevent WI duplication by stripping macros from fetched system prompt
+    if (activeSystemPrompt) {
+        // 预设 system 常含 {{world_info}} 系宏，宿主上下文里已由独立消息注入，不剥会重复计费
         activeSystemPrompt = activeSystemPrompt
             .replace(/{{user}}/g, currentName)
             .replace(/{{char}}/g, charName)
@@ -410,8 +407,8 @@ export async function runGeneration(data, apiConfig) {
             .replace(/{{wInfo}}/gi, '')
             .replace(/{{worldInfo}}/gi, '');
     } else {
-        // Pure mode returns empty string
-        activeSystemPrompt = ""; 
+        // 预设取不到 system（含纯模式）即不发 system 消息——requestOnce 对空串不入 messages
+        activeSystemPrompt = "";
     }
 
     // 策展产出 schema（纯键），起手词只需围栏头；档案段起手词从目标结构首键派生——

@@ -99,12 +99,3 @@ export const DEFAULT_PROMPTS = {
 [行动]：
 只输出符合 schema 的 YAML 数据，每个字段都已填好。`
 };
-
-export const FALLBACK_SYSTEM_PROMPT =
-`[任务：资料恢复操作]
-[目标：角色人设]
-[背景：叙事模拟需要一份完整详细的人设以维持逻辑连续性。]
-1. 分析素材。
-2. 补全目标 schema。
-3. 不要总结，不要过滤，填满每一个字段。
-4. 保持 YAML 结构完全不变。`;

@@ -1,7 +1,7 @@
 // 内存状态单容器（store）与 localStorage 持久化簇。本模块是纯数据/持久化叶子，不依赖 ST 宿主。
 // store 必须整体导入后做属性赋值——ESM 具名导入绑定只读，散装 let 无法跨模块改写。
 // STORAGE_KEY_* 与用户浏览器存量数据是持久化契约：键名一经发布不可再改。
-import { DEFAULT_PROMPTS, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
+import { DEFAULT_PROMPTS } from "./prompts.js";
 import { TEXT } from "./strings.js";
 
 // Storage Keys
@@ -23,8 +23,7 @@ const defaultUserContext = () => ({ request: "", result: "", hasResult: false })
 export const store = {
     promptsCache: {
         personaGen: DEFAULT_PROMPTS.personaGen,
-        curator: DEFAULT_PROMPTS.curator,
-        initial: FALLBACK_SYSTEM_PROMPT
+        curator: DEFAULT_PROMPTS.curator
     },
     availableWorldBooks: [],
     isProcessing: false,
@@ -58,23 +57,20 @@ export function loadData() {
         // 维护这组签名，否则老缓存会遮蔽新默认。
         const OLD_DEFAULT_SIGS = {
             personaGen: '[Task: Generate/Refine User Profile]',
-            curator: '[TASK: CURATE_PROFILE_SCHEMA]',
-            initial: '[TASK: DATABASE_RECOVERY_OPERATION]'
+            curator: '[TASK: CURATE_PROFILE_SCHEMA]'
         };
         const migratePrompt = (stored, def, sig) =>
             (stored && !stored.includes(sig)) ? stored : def;
-        // 按当前键集合重建缓存对象：存量里的退役键（旧版模板生成提示词）随之自然剥掉，无需逐键删除。
+        // 按当前键集合重建缓存对象：存量里的退役键（旧版模板生成提示词、已删除的兜底 system 键）随之自然剥掉，无需逐键删除。
         store.promptsCache = {
             personaGen: migratePrompt(p && p.personaGen, DEFAULT_PROMPTS.personaGen, OLD_DEFAULT_SIGS.personaGen),
-            curator: migratePrompt(p && p.curator, DEFAULT_PROMPTS.curator, OLD_DEFAULT_SIGS.curator),
-            initial: migratePrompt(p && p.initial, FALLBACK_SYSTEM_PROMPT, OLD_DEFAULT_SIGS.initial)
+            curator: migratePrompt(p && p.curator, DEFAULT_PROMPTS.curator, OLD_DEFAULT_SIGS.curator)
         };
-    } catch { 
-        store.promptsCache = { 
+    } catch {
+        store.promptsCache = {
             personaGen: DEFAULT_PROMPTS.personaGen,
-            curator: DEFAULT_PROMPTS.curator,
-            initial: FALLBACK_SYSTEM_PROMPT 
-        }; 
+            curator: DEFAULT_PROMPTS.curator
+        };
     }
     try { store.wiSelectionCache = JSON.parse(localStorage.getItem(STORAGE_KEY_WI_STATE)) || {}; } catch { store.wiSelectionCache = {}; }
     

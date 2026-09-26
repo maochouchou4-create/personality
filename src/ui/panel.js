@@ -27,11 +27,6 @@ const PROMPT_VIEW_SECTIONS = [
         body: () => store.promptsCache.personaGen
     },
     {
-        title: "兜底 system 提示词（initial）",
-        note: "跟随酒馆预设取不到时的 system 消息兜底。占位符：{{user}}＝用户名。",
-        body: () => store.promptsCache.initial
-    },
-    {
         title: "默认模板（user）",
         note: "策展失败或零素材时的回退 schema（七块结构）。占位符：{{user}}＝用户名。",
         body: () => DEFAULT_TEMPLATES.user
