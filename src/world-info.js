@@ -14,10 +14,10 @@ try { window.pwPinnedBooks = JSON.parse(localStorage.getItem(STORAGE_KEY_PINNED_
 // Merge pinned books into extra on init
 window.pwExtraBooks = [...window.pwPinnedBooks];
 
-export const getPosFilterCode = (pos) => {
-    if (!pos) return 'unknown';
-    return pos;
-};
+export function getPosAbbr(pos) {
+    // 原生数字枚举（TauriTavern world-info.js：0 角色前/1 角色后/2 AN前/3 AN后/4 @深度/5 样例前/6 样例后）
+    return ({ 0: 'PreChar', 1: 'PostChar', 2: 'PreAN', 3: 'PostAN', 4: '@Depth', 5: 'PreEx', 6: 'PostEx' })[pos] ?? '?';
+}
 
 export function getWiCacheKey() {
     const context = getContext();
@@ -164,8 +164,7 @@ export async function getWorldBookEntries(bookName) {
             content: e.content || "",
             enabled: !e.disable,
             depth: e.depth ?? 0,
-            position: e.position !== undefined ? e.position : 0,
-            filterCode: getPosFilterCode(e.position)
+            position: e.position ?? 'unknown'
         }));
     } catch (e) {
         // 单书读取失败（不存在/宿主异常）不阻断其余书目，消费方按空书处理
@@ -177,15 +176,3 @@ export async function getWorldBookEntries(bookName) {
 export function savePinnedBooks() {
     try { localStorage.setItem(STORAGE_KEY_PINNED_BOOKS, JSON.stringify(window.pwPinnedBooks)); } catch(e) { logWarn(e); }
 }
-
-export const getPosAbbr = (pos) => {
-    if (pos === 0 || pos === 'before_character_definition') return 'PreChar';
-    if (pos === 1 || pos === 'after_character_definition') return 'PostChar';
-    if (pos === 2 || pos === 'before_example_messages') return 'PreEx';
-    if (pos === 3 || pos === 'after_example_messages') return 'PostEx';
-    if (pos === 4 || pos === 'before_author_note') return 'PreAN';
-    if (pos === 5 || pos === 'after_author_note') return 'PostAN';
-    if (pos === 6 || pos === 'at_depth_as_system') return '@Sys'; // 旧代码兼容
-    if (String(pos).includes('at_depth')) return '@Depth';
-    return '?';
-};

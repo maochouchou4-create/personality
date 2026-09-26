@@ -5,7 +5,7 @@ import { log as logInfo, warn as logWarn } from "../log.js";
 import { TEXT } from "../strings.js";
 import { store, loadState } from "../state.js";
 import { getCharacterGreetingsList } from "../st-data.js";
-import { getContextWorldBooks, getWorldBookEntries, loadWiSelection, saveWiSelection, savePinnedBooks, getPosFilterCode, getPosAbbr } from "../world-info.js";
+import { getContextWorldBooks, getWorldBookEntries, loadWiSelection, saveWiSelection, savePinnedBooks, getPosAbbr } from "../world-info.js";
 
 export function autoBindGreetings() {
     try {
@@ -182,15 +182,13 @@ export const renderWiBooks = async () => {
                             <div class="pw-wi-filter-row">
                                 <select id="p-select" class="pw-pos-select">
                                     <option value="unknown">全部位置</option>
-                                    <option value="before_character_definition">角色前</option>
-                                    <option value="after_character_definition">角色后</option>
-                                    <option value="before_author_note">AN前</option>
-                                    <option value="after_author_note">AN后</option>
-                                    <option value="before_example_messages">样例前</option>
-                                    <option value="after_example_messages">样例后</option>
-                                    <option value="at_depth_as_system">@深度(系统)</option>
-                                    <option value="at_depth_as_assistant">@深度(助手)</option>
-                                    <option value="at_depth_as_user">@深度(用户)</option>
+                                    <option value="0">角色前</option>
+                                    <option value="1">角色后</option>
+                                    <option value="2">AN前</option>
+                                    <option value="3">AN后</option>
+                                    <option value="4">@深度</option>
+                                    <option value="5">样例前</option>
+                                    <option value="6">样例后</option>
                                 </select>
                                 <input type="number" class="pw-depth-input" id="d-min" placeholder="0" title="最小深度">
                                 <span>-</span>
@@ -226,7 +224,7 @@ export const renderWiBooks = async () => {
                                 const title = $row.find('.pw-wi-title-text').text().toLowerCase();
                                 let matches = true;
                                 if (keyword && !title.includes(keyword) && !content.includes(keyword)) matches = false;
-                                if (matches && pVal !== 'unknown' && code !== pVal) matches = false;
+                                if (matches && pVal !== 'unknown' && String(code) !== pVal) matches = false;
                                 if (matches && (d < dMin || d > dMax)) matches = false;
                                 if (matches) $row.show(); else $row.hide();
                             });
@@ -274,7 +272,7 @@ export const renderWiBooks = async () => {
                             const infoLabel = `<span class="pw-wi-info-badge" title="位置:深度">[${posAbbr}:${entry.depth}]</span>`;
 
                             const $item = $(`
-                            <div class="pw-wi-item" data-depth="${entry.depth}" data-code="${getPosFilterCode(entry.position)}" data-original-enabled="${entry.enabled}">
+                            <div class="pw-wi-item" data-depth="${entry.depth}" data-code="${entry.position}" data-original-enabled="${entry.enabled}">
                                 <div class="pw-wi-item-row">
                                     <input type="checkbox" class="pw-wi-check" value="${entry.uid}" ${checkedAttr} data-content="${encodeURIComponent(entry.content)}">
                                     <div class="pw-wi-title-text">
