@@ -4,7 +4,7 @@ import { getContext } from "../../../../../extensions.js";
 import { store, loadData, saveData, loadState, saveState } from "../state.js";
 import { getActivePersonaDescription } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
-import { forceSavePersona, syncToWorldInfoViaHelper, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
+import { forceSavePersona, syncPersonaToWorldInfo, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
 import { TEXT } from "../strings.js";
 import { renderApiProfiles, renderWiBooks } from "./render.js";
@@ -594,7 +594,7 @@ export function bindEvents() {
         const content = $('#pw-result-text').val();
         if (!content) return toastr.warning("内容为空，无法保存");
         const name = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || "User";
-        await syncToWorldInfoViaHelper(name, content);
+        await syncPersonaToWorldInfo(name, content);
     });
 
     $(document).on('click.pw', '#pw-btn-apply', async function () {

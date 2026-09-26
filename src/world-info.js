@@ -1,8 +1,9 @@
-// 世界书域：绑定书目发现、条目读取、勾选持久化、TavernHelper 同步、
+// 世界书域：绑定书目发现、条目读取、勾选持久化、人设写回世界书、
 // 智能关键词抽取与跨角色钉选。WI 专属持久化归本模块；键常量的
 // 单一事实源在 state.js，经 import 消费。
+// 宿主操作全部走 getContext() 挂载方法，不新增宿主模块 import（check-imports 白名单只认 extensions/script）。
 import { getContext } from "../../../../extensions.js";
-import { saveSettingsDebounced, getRequestHeaders } from "../../../../../script.js";
+import { saveSettingsDebounced } from "../../../../../script.js";
 import { store, safeLocalStorageSet, STORAGE_KEY_WI_STATE, STORAGE_KEY_PINNED_BOOKS } from "./state.js";
 import { TEXT } from "./strings.js";
 
@@ -78,21 +79,11 @@ export function generateSmartKeywords(name, content, staticTags = []) {
     return [...new Set(rawKeys)].filter(k => k && k.length > 1);
 }
 
-export async function syncToWorldInfoViaHelper(userName, content) {
-    if (!window.TavernHelper) return toastr.error(TEXT.TOAST_WI_ERROR);
-
-    let targetBook = null;
-    try {
-        const charBooks = window.TavernHelper.getCharWorldbookNames('current');
-        if (charBooks && charBooks.primary) targetBook = charBooks.primary;
-        else if (charBooks && charBooks.additional && charBooks.additional.length > 0) targetBook = charBooks.additional[0];
-    } catch (e) { }
-    
-    if (!targetBook) {
-        const boundBooks = await getContextWorldBooks();
-        if (boundBooks.length > 0) targetBook = boundBooks[0];
-    }
-    
+// 人设写回世界书：读全量 → 定位/新建 USER 条目 → saveWorldInfo(immediately=true) 整本回写。
+// immediately=true 时 await 返回即宿主已确认 HTTP 落盘，链上再无用户代码——成败即真判据，
+// 不再有「写入成功却报失败」的中间抛错面（旧依赖链的 catch-all 误报根因）。
+export async function syncPersonaToWorldInfo(userName, content) {
+    const targetBook = (await getContextWorldBooks())[0];
     if (!targetBook) return toastr.warning(TEXT.TOAST_WI_FAIL);
 
     const nameMatch = content.match(/姓名:\s*(.*?)(\n|$)/);
@@ -101,49 +92,49 @@ export async function syncToWorldInfoViaHelper(userName, content) {
     const entryKeys = generateSmartKeywords(finalUserName, content, ["User"]);
 
     try {
-        const entries = await window.TavernHelper.getLorebookEntries(targetBook);
+        const data = await getContext().loadWorldInfo(targetBook);
+        const entries = Object.values(data.entries || {});
         const existingEntry = entries.find(e => e.comment === entryTitle);
 
         if (existingEntry) {
-            await window.TavernHelper.setLorebookEntries(targetBook, [{ 
-                uid: existingEntry.uid, 
-                content: content, 
-                keys: entryKeys, // 更新 Keys
-                enabled: true 
-            }]);
+            // 原生条目字段：key 是数组、disable 是反向布尔（与旧依赖的 keys/enabled 语义不同，映射反了＝条目静默失效）
+            existingEntry.content = content;
+            existingEntry.key = entryKeys;
+            existingEntry.disable = false;
         } else {
-            const newEntry = { 
-                comment: entryTitle, 
-                keys: entryKeys, 
-                content: content, 
-                enabled: true, 
-                selective: true, 
-                constant: false, 
-                position: { type: 'before_character_definition' } 
+            const uid = entries.reduce((m, e) => Math.max(m, Number(e.uid) || 0), -1) + 1;
+            const displayIndex = entries.reduce((m, e) => Math.max(m, Number(e.displayIndex) || 0), -1) + 1;
+            // 字段全集照宿主 newWorldInfoEntryTemplate 形态（缺字段会让编辑器/保存链行为未定义）
+            data.entries[String(uid)] = {
+                uid, displayIndex,
+                addMemo: true, automationId: "", caseSensitive: null,
+                comment: entryTitle, constant: false, content,
+                cooldown: 0, delay: 0, delayUntilRecursion: false,
+                depth: 4, disable: false,
+                excludeRecursion: false, preventRecursion: false,
+                group: "", groupOverride: false, groupWeight: 100,
+                ignoreBudget: false, key: entryKeys, keysecondary: [],
+                matchCharacterDepthPrompt: false, matchCharacterDescription: false,
+                matchCharacterPersonality: false, matchCreatorNotes: false,
+                matchPersonaDescription: false, matchScenario: false,
+                matchWholeWords: null, order: 100, outletName: "",
+                position: 0, probability: 100, role: null,
+                scanDepth: null, selective: true, selectiveLogic: 0,
+                sticky: 0, triggers: [], useGroupScoring: null,
+                useProbability: true, vectorized: false,
             };
-            await window.TavernHelper.createLorebookEntries(targetBook, [newEntry]);
         }
+        await getContext().saveWorldInfo(targetBook, data, true);
         toastr.success(TEXT.TOAST_WI_SUCCESS(targetBook, entryTitle) + `\n触发词: ${entryKeys.join(', ')}`);
-    } catch (e) { 
+    } catch (e) {
         console.error("[PW] World Info Sync Error:", e);
-        toastr.error("写入世界书失败: " + e.message); 
+        toastr.error(TEXT.TOAST_WI_WRITE_FAIL + e.message);
     }
 }
 
 export async function loadAvailableWorldBooks() {
-    store.availableWorldBooks = [];
-    if (window.TavernHelper && typeof window.TavernHelper.getWorldbookNames === 'function') {
-        try { store.availableWorldBooks = window.TavernHelper.getWorldbookNames(); } catch { }
-    }
-    if (store.availableWorldBooks.length === 0 && window.world_names && Array.isArray(window.world_names)) {
-        store.availableWorldBooks = window.world_names;
-    }
-    if (store.availableWorldBooks.length === 0) {
-        try {
-            const r = await fetch('/api/worldinfo/get', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({}) });
-            if (r.ok) { const d = await r.json(); store.availableWorldBooks = d.world_names || d; }
-        } catch (e) { }
-    }
+    // 单一事实源＝宿主启动时 updateWorldInfoList 装载的全量书目快照
+    store.availableWorldBooks = getContext().getWorldInfoNames();
     store.availableWorldBooks = [...new Set(store.availableWorldBooks)].filter(x => x).sort();
 }
 
@@ -154,8 +145,9 @@ export async function getContextWorldBooks(extras = []) {
     if (charId !== undefined && context.characters[charId]) {
         const char = context.characters[charId];
         const data = char.data || char;
-        if (data.character_book?.name) books.add(data.character_book.name);
+        // 主书（extensions.world）必须排在内嵌书之前——写回世界书取首个绑定书
         if (data.extensions?.world) books.add(data.extensions.world);
+        if (data.character_book?.name) books.add(data.character_book.name);
         if (data.world) books.add(data.world);
         if (context.chatMetadata?.world_info) books.add(context.chatMetadata.world_info);
     }
@@ -163,21 +155,22 @@ export async function getContextWorldBooks(extras = []) {
 }
 
 export async function getWorldBookEntries(bookName) {
-    if (window.TavernHelper && typeof window.TavernHelper.getLorebookEntries === 'function') {
-        try {
-            const entries = await window.TavernHelper.getLorebookEntries(bookName);
-            return entries.map(e => ({ 
-                uid: e.uid, 
-                displayName: e.comment || (Array.isArray(e.keys) ? e.keys.join(', ') : e.keys) || "无标题", 
-                content: e.content || "", 
-                enabled: e.enabled,
-                depth: (e.depth !== undefined && e.depth !== null) ? e.depth : (e.extensions?.depth || 0),
-                position: e.position !== undefined ? e.position : 0,
-                filterCode: getPosFilterCode(e.position) 
-            }));
-        } catch (e) { }
+    try {
+        const data = await getContext().loadWorldInfo(bookName);
+        return Object.values(data.entries || {}).map(e => ({
+            uid: e.uid,
+            displayName: e.comment || (Array.isArray(e.key) ? e.key.join(', ') : e.key) || "无标题",
+            content: e.content || "",
+            enabled: !e.disable,
+            depth: e.depth ?? 0,
+            position: e.position !== undefined ? e.position : 0,
+            filterCode: getPosFilterCode(e.position)
+        }));
+    } catch (e) {
+        // 单书读取失败（不存在/宿主异常）不阻断其余书目，消费方按空书处理
+        console.warn("[PW] Failed to load world book entries:", bookName, e);
+        return [];
     }
-    return [];
 }
 
 export function savePinnedBooks() {
