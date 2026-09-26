@@ -9,7 +9,8 @@ import { renderDiffComparison, assembleDiffResult } from "../diff.js";
 import { fetchModels, testConnection, clampTimeout } from "../api.js";
 import { TEXT } from "../strings.js";
 import { log as logInfo, error as logError } from "../log.js";
-import { renderApiProfiles, renderWiBooks } from "./render.js";
+import { renderApiProfiles } from "./render.js";
+import { renderWiBooks } from "./world-book-widget.js";
 import { openCreatorPopup } from "./panel.js";
 
 const BUTTON_ID = 'pw_persona_tool_btn';
@@ -113,18 +114,9 @@ const buildApiConfig = (contextData, fields) => ({
     thinkingEffort: $('#pw-thinking-effort').val()
 });
 
-export function bindEvents() {
-    if (window.stPersonaWeaverBound) return;
-    window.stPersonaWeaverBound = true;
 
-    logInfo("Binding Events (Standard)...");
-
-    const context = getContext();
-    if (context && context.eventSource) {
-        context.eventSource.on(context.eventTypes.APP_READY, addPersonaButton);
-        context.eventSource.on(context.eventTypes.MOVABLE_PANELS_RESET, addPersonaButton);
-    }
-    window.openPersonaWeaver = openCreatorPopup;
+// API 域：配置存为/切换/删除、请求超时与思考强度、取模型与连通测试、编辑现场热存绑定。
+function bindApiProfileEvents() {
 // --- [新增] API 预设表单管理事件 ---
     
     // 1. 保存为配置：把当前表单（含命名框）整体收进新配置并选中，不清空表单——
@@ -212,7 +204,52 @@ export function bindEvents() {
         }
     });
 
-    // [Fix 10] Preset Select Change Logic
+    $(document).on('input.pw change.pw', '#pw-request, #pw-result-text, #pw-wi-toggle, #pw-indep-stream, .pw-input, .pw-select', saveCurrentState);
+
+    $(document).on('change.pw', '#pw-api-source', function () { $('#pw-indep-settings').toggle($(this).val() === 'independent'); });
+
+    // 思考强度是请求级参数、与 API 来源无关，单独持久化（不进 saveCurrentState 的独立 API 分支）
+    $(document).on('change.pw', '#pw-thinking-effort', function () {
+        const savedState = loadState();
+        savedState.localConfig = { ...(savedState.localConfig || {}), thinkingEffort: $(this).val() };
+        saveState(savedState);
+    });
+
+    $(document).on('click.pw', '#pw-api-fetch', async function (e) {
+        e.preventDefault();
+        const url = $('#pw-api-url').val();
+        const key = $('#pw-api-key').val();
+        const $btn = $(this).find('i').addClass('fa-spin');
+        try {
+            // 协议知识（形态判定/base 归一/候选端点循环）全部在 api.js，UI 只管表单与呈现
+            const models = await fetchModels(url, key);
+            const $select = $('#pw-api-model-select').empty();
+            models.forEach(m => $select.append(`<option value="${m}">${m}</option>`));
+            if (models.length > 0) $select.val(models[0]);
+            toastr.success(TEXT.TOAST_MODELS_LOADED(models.length));
+        } catch (e) { toastr.error(e.message); }
+        finally { $btn.removeClass('fa-spin'); }
+    });
+
+    $(document).on('click.pw', '#pw-api-test', async function (e) {
+        e.preventDefault();
+        const url = $('#pw-api-url').val();
+        const key = $('#pw-api-key').val();
+        const model = $('#pw-api-model-select').val();
+        const $btn = $(this);
+        const restoreBtn = withButtonSpinner($btn, '<i class="fas fa-spinner fa-spin"></i>');
+        try {
+            const res = await testConnection(url, key, model);
+            if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
+            else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
+        } catch (e) { toastr.error(TEXT.TOAST_CONN_FAIL); }
+        finally { restoreBtn(); }
+    });
+}
+
+// 预设与开场白域：预设下拉记忆、开场白选择与预览折叠。
+function bindPresetGreetingsEvents() {
+// [Fix 10] Preset Select Change Logic
     $(document).on('change.pw', '#pw-preset-select', function() {
         const val = $(this).val();
         store.uiStateCache.generationPreset = val;
@@ -247,8 +284,11 @@ export function bindEvents() {
             $(this).html('<i class="fa-solid fa-angle-up"></i> 收起预览');
         }
     });
+}
 
-    $(document).on('click.pw', '#pw-copy-persona', function() {
+// 编辑器域：复制、tab 切换、划词浮窗、自适应高度、双框焦点切换。
+function bindEditorEvents() {
+$(document).on('click.pw', '#pw-copy-persona', function() {
         const text = $('#pw-result-text').val();
         if(!text) return toastr.warning(TEXT.TOAST_NOTHING_TO_COPY);
         navigator.clipboard.writeText(text);
@@ -308,8 +348,7 @@ export function bindEvents() {
     };
     $(document).on('input.pw', '.pw-auto-height', function () { adjustHeight(this); });
 
-    $(document).on('input.pw change.pw', '#pw-request, #pw-result-text, #pw-wi-toggle, #pw-indep-stream, .pw-input, .pw-select', saveCurrentState);
-
+    
     // --- 文本框焦点切换：点击哪个展开哪个 ---
     $(document).on('focus.pw', '#pw-request', function() {
         if ($('#pw-result-area').is(':visible')) {
@@ -323,8 +362,11 @@ export function bindEvents() {
             $('#pw-request').addClass('minimized');
         }
     });
+}
 
-    // --- Diff View Logic (Sub-view Mode Switching) ---
+// Diff 润色域：视图模式切换、内联取舍、润色与重 Roll、确认/取消。
+function bindDiffEvents() {
+// --- Diff View Logic (Sub-view Mode Switching) ---
     $(document).on('click.pw', '.pw-diff-mode-btn', function () {
         const $list = $('#pw-diff-merge-list');
         if ($(this).hasClass('active')) {
@@ -470,8 +512,11 @@ export function bindEvents() {
     });
 
     $(document).on('click.pw', '#pw-diff-cancel', () => $('#pw-diff-overlay').fadeOut());
+}
 
-    // Generate Persona
+// 生成与落库域：生成 User 设定、写回世界书、覆盖当前人设、清空。
+function bindGenerationEvents() {
+// Generate Persona
     $(document).on('click.pw', '#pw-btn-gen', async function (e) {
         e.preventDefault();
         
@@ -508,7 +553,40 @@ export function bindEvents() {
         }
     });
 
-    $(document).on('click.pw', '#pw-load-overlay-close', closeLoadOverlay);
+    $(document).on('click.pw', '#pw-btn-save-wi', async function () {
+        const content = $('#pw-result-text').val();
+        if (!content) return toastr.warning(TEXT.TOAST_EMPTY_FOR_SAVE);
+        const name = getUserDisplayName();
+        await syncPersonaToWorldInfo(name, content);
+    });
+
+    $(document).on('click.pw', '#pw-btn-apply', async function () {
+        const content = $('#pw-result-text').val();
+        if (!content) return toastr.warning(TEXT.TOAST_EMPTY_RESULT);
+        const name = getUserDisplayName();
+        try {
+            await upsertPersona(name, content);
+        } catch (e) {
+            logError(e);
+            return toastr.error(TEXT.TOAST_SAVE_FAIL(e.message));
+        }
+        toastr.success(TEXT.TOAST_SAVE_SUCCESS(name));
+        $('.popup_close').click();
+    });
+
+    $(document).on('click.pw', '#pw-clear', function () {
+        if (confirm("确定清空？")) {
+            $('#pw-request').val('').removeClass('minimized');
+            $('#pw-result-area').hide();
+            $('#pw-result-text').val('');
+            saveCurrentState();
+        }
+    });
+}
+
+// 载入遮罩域：关闭、载入已有人设（User 人设/世界书条目）、追加书目。
+function bindLoadOverlayEvents() {
+$(document).on('click.pw', '#pw-load-overlay-close', closeLoadOverlay);
 
     $(document).on('click.pw', '#pw-btn-load-current', async function() {
         const $content = $('#pw-load-overlay-content');
@@ -603,77 +681,28 @@ export function bindEvents() {
         });
     });
 
-    $(document).on('click.pw', '#pw-btn-save-wi', async function () {
-        const content = $('#pw-result-text').val();
-        if (!content) return toastr.warning(TEXT.TOAST_EMPTY_FOR_SAVE);
-        const name = getUserDisplayName();
-        await syncPersonaToWorldInfo(name, content);
-    });
-
-    $(document).on('click.pw', '#pw-btn-apply', async function () {
-        const content = $('#pw-result-text').val();
-        if (!content) return toastr.warning(TEXT.TOAST_EMPTY_RESULT);
-        const name = getUserDisplayName();
-        try {
-            await upsertPersona(name, content);
-        } catch (e) {
-            logError(e);
-            return toastr.error(TEXT.TOAST_SAVE_FAIL(e.message));
-        }
-        toastr.success(TEXT.TOAST_SAVE_SUCCESS(name));
-        $('.popup_close').click();
-    });
-
-    $(document).on('click.pw', '#pw-clear', function () {
-        if (confirm("确定清空？")) {
-            $('#pw-request').val('').removeClass('minimized');
-            $('#pw-result-area').hide();
-            $('#pw-result-text').val('');
-            saveCurrentState();
-        }
-    });
-
-    $(document).on('change.pw', '#pw-api-source', function () { $('#pw-indep-settings').toggle($(this).val() === 'independent'); });
-
-    // 思考强度是请求级参数、与 API 来源无关，单独持久化（不进 saveCurrentState 的独立 API 分支）
-    $(document).on('change.pw', '#pw-thinking-effort', function () {
-        const savedState = loadState();
-        savedState.localConfig = { ...(savedState.localConfig || {}), thinkingEffort: $(this).val() };
-        saveState(savedState);
-    });
-
-    $(document).on('click.pw', '#pw-api-fetch', async function (e) {
-        e.preventDefault();
-        const url = $('#pw-api-url').val();
-        const key = $('#pw-api-key').val();
-        const $btn = $(this).find('i').addClass('fa-spin');
-        try {
-            // 协议知识（形态判定/base 归一/候选端点循环）全部在 api.js，UI 只管表单与呈现
-            const models = await fetchModels(url, key);
-            const $select = $('#pw-api-model-select').empty();
-            models.forEach(m => $select.append(`<option value="${m}">${m}</option>`));
-            if (models.length > 0) $select.val(models[0]);
-            toastr.success(TEXT.TOAST_MODELS_LOADED(models.length));
-        } catch (e) { toastr.error(e.message); }
-        finally { $btn.removeClass('fa-spin'); }
-    });
-
-    $(document).on('click.pw', '#pw-api-test', async function (e) {
-        e.preventDefault();
-        const url = $('#pw-api-url').val();
-        const key = $('#pw-api-key').val();
-        const model = $('#pw-api-model-select').val();
-        const $btn = $(this);
-        const restoreBtn = withButtonSpinner($btn, '<i class="fas fa-spinner fa-spin"></i>');
-        try {
-            const res = await testConnection(url, key, model);
-            if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
-            else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
-        } catch (e) { toastr.error(TEXT.TOAST_CONN_FAIL); }
-        finally { restoreBtn(); }
-    });
-
     $(document).on('click.pw', '#pw-wi-add', () => { const val = $('#pw-wi-select').val(); if (val && !store.extraBooks.includes(val)) { store.extraBooks.push(val); renderWiBooks(); } });
+}
+
+export function bindEvents() {
+    if (window.stPersonaWeaverBound) return;
+    window.stPersonaWeaverBound = true;
+
+    logInfo("Binding Events (Standard)...");
+
+    const context = getContext();
+    if (context && context.eventSource) {
+        context.eventSource.on(context.eventTypes.APP_READY, addPersonaButton);
+        context.eventSource.on(context.eventTypes.MOVABLE_PANELS_RESET, addPersonaButton);
+    }
+    window.openPersonaWeaver = openCreatorPopup;
+
+    bindApiProfileEvents();
+    bindPresetGreetingsEvents();
+    bindEditorEvents();
+    bindDiffEvents();
+    bindGenerationEvents();
+    bindLoadOverlayEvents();
 }
 
 export function addPersonaButton() {

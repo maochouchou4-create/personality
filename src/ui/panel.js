@@ -10,7 +10,8 @@ import { getCurrentCharacter, getUserDisplayName } from "../st-data.js";
 import { TEXT } from "../strings.js";
 import { warn as logWarn } from "../log.js";
 import { escapeHtml } from "../html.js";
-import { autoBindGreetings, renderApiProfiles, renderGreetingsList, renderWiBooks } from "./render.js";
+import { autoBindGreetings, renderApiProfiles, renderGreetingsList } from "./render.js";
+import { renderWiBooks } from "./world-book-widget.js";
 
 const PROMPT_VIEW_SECTIONS = [
     {
@@ -30,51 +31,33 @@ const PROMPT_VIEW_SECTIONS = [
     }
 ];
 
-export async function openCreatorPopup() {
-    const context = getContext();
-    loadData();
-
-    const savedState = loadState();
-    let localConfig = savedState.localConfig || {};
-
-    // --- [新增] API 多配置迁移与初始化 ---
-    if (!localConfig.apiProfiles) {
-        localConfig.apiProfiles =[];
-        // 如果存在旧版独立API记录，自动将其存为“默认配置”
-        const existingUrl = localConfig.indepApiUrl || defaultSettings.indepApiUrl;
-        if (existingUrl) {
-            localConfig.apiProfiles.push({
-                id: Date.now().toString(),
-                name: "默认配置 1",
-                url: existingUrl,
-                key: localConfig.indepApiKey || defaultSettings.indepApiKey || "",
-                model: localConfig.indepApiModel || defaultSettings.indepApiModel || ""
-            });
-            localConfig.activeApiProfileId = localConfig.apiProfiles[0].id;
-        }
-        savedState.localConfig = localConfig;
-        saveState(savedState); // 保存迁移后的结构
+// 旧版独立 API 记录迁移为配置档（幂等）：无 apiProfiles 时把现值收成「默认配置 1」。
+function migrateApiProfiles(savedState, localConfig) {
+    if (localConfig.apiProfiles) return;
+    localConfig.apiProfiles = [];
+    const existingUrl = localConfig.indepApiUrl || defaultSettings.indepApiUrl;
+    if (existingUrl) {
+        localConfig.apiProfiles.push({
+            id: Date.now().toString(),
+            name: "默认配置 1",
+            url: existingUrl,
+            key: localConfig.indepApiKey || defaultSettings.indepApiKey || "",
+            model: localConfig.indepApiModel || defaultSettings.indepApiModel || ""
+        });
+        localConfig.activeApiProfileId = localConfig.apiProfiles[0].id;
     }
-    // -------------------------------------
+    savedState.localConfig = localConfig;
+    saveState(savedState);
+}
 
-    const config = { ...defaultSettings, ...savedState.localConfig };
-
-    const currentName = getUserDisplayName();
-
-    const activeData = store.userContext;
-    
-    const charName = getCurrentCharacter()?.name || "None";
-    
-    const headerTitle = `${TEXT.PANEL_TITLE}<span class="pw-header-subtitle">User:${currentName} & Char:${charName}</span>`;
-
-    // [Fix 10] Generate Preset Options
+// 预设下拉选项：默认两项＋宿主 openai 预设名单（本 fork 的 preset_names 是 {名字: 索引} 对象）。
+function buildPresetOptions() {
     let presetOptionsHtml = `
         <option value="current" ${store.uiStateCache.generationPreset === 'current' ? 'selected' : ''}>跟随酒馆预设 (Default)</option>
         <option value="pure" ${store.uiStateCache.generationPreset === 'pure' ? 'selected' : ''}>✨ 纯净模式 (Pure Mode)</option>
     `;
     try {
         const rawNames = getContext().getPresetManager('openai').getPresetList().preset_names || {};
-        // 本 fork 的 preset_names 被 loadOpenAISettings 重建为 {名字: 索引} 对象
         const presets = (Array.isArray(rawNames) ? rawNames : Object.keys(rawNames)).slice().sort();
         presets.forEach(p => {
             const sel = store.uiStateCache.generationPreset === p ? 'selected' : '';
@@ -84,6 +67,51 @@ export async function openCreatorPopup() {
         // 宿主预设管理器未就绪时下拉框只显示默认两项，不阻断面板打开
         logWarn("预设列表加载失败:", e);
     }
+    return presetOptionsHtml;
+}
+
+// 弹窗打开后的初始化序列：异步装载世界书、渲染三个动态区、恢复折叠态。
+function initCreatorPanel() {
+    loadAvailableWorldBooks().then(() => {
+        renderWiBooks();
+        const options = store.availableWorldBooks.length > 0 ? store.availableWorldBooks.map(b => `<option value="${b}">${b}</option>`).join('') : `<option disabled>未找到世界书</option>`;
+        $('#pw-wi-select').html(`<option value="">-- 添加参考/目标世界书 --</option>${options}`);
+    });
+
+    renderGreetingsList();
+    autoBindGreetings();
+    renderApiProfiles();
+
+    $('.pw-auto-height').each(function() {
+        this.style.height = 'auto';
+        this.style.height = (this.scrollHeight) + 'px';
+    });
+
+    if (store.userContext.hasResult) {
+        $('#pw-request').addClass('minimized');
+    }
+}
+
+export async function openCreatorPopup() {
+    const context = getContext();
+    loadData();
+
+    const savedState = loadState();
+    let localConfig = savedState.localConfig || {};
+
+    migrateApiProfiles(savedState, localConfig);
+
+    const config = { ...defaultSettings, ...savedState.localConfig };
+
+    const currentName = getUserDisplayName();
+
+    const activeData = store.userContext;
+
+    const charName = getCurrentCharacter()?.name || "None";
+
+    const headerTitle = `${TEXT.PANEL_TITLE}<span class="pw-header-subtitle">User:${currentName} & Char:${charName}</span>`;
+
+    const presetOptionsHtml = buildPresetOptions();
 
     // [Fix 14] Initial Hint Text
     const initialHint = getPresetHintText(store.uiStateCache.generationPreset);
@@ -308,22 +336,5 @@ export async function openCreatorPopup() {
 
     callPopup(html, 'text', '', { wide: true, large: true, okButton: "Close" });
 
-    loadAvailableWorldBooks().then(() => {
-        renderWiBooks();
-        const options = store.availableWorldBooks.length > 0 ? store.availableWorldBooks.map(b => `<option value="${b}">${b}</option>`).join('') : `<option disabled>未找到世界书</option>`;
-        $('#pw-wi-select').html(`<option value="">-- 添加参考/目标世界书 --</option>${options}`);
-    });
-
-    renderGreetingsList();
-    autoBindGreetings();
-    renderApiProfiles();
-
-    $('.pw-auto-height').each(function() {
-        this.style.height = 'auto';
-        this.style.height = (this.scrollHeight) + 'px';
-    });
-
-    if (activeData.hasResult) {
-        $('#pw-request').addClass('minimized');
-    }
+    initCreatorPanel();
 }
