@@ -2,11 +2,12 @@
 // 渲染只服务本域（#pw-diff-merge-list），视图状态在 store.currentDiffBlocks。
 import { store } from "./state.js";
 import { TEXT } from "./strings.js";
+import { escapeHtml } from "./html.js";
 
 // ============================================================================
 // 新增：独立的 Diff 渲染函数 (供润色和重Roll复用)
 // ============================================================================
-function _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 
 export function computeDiffBlocks(oldText, newText) {
     const tokenize = (text) => {
@@ -78,16 +79,16 @@ function renderInlineDiff() {
     let html = '';
     store.currentDiffBlocks.forEach((block, index) => {
         if (block.type === 'equal') {
-            html += `<span class="pw-idiff-equal" data-idx="${index}">${_esc(block.value)}</span>`;
+            html += `<span class="pw-idiff-equal" data-idx="${index}">${escapeHtml(block.value)}</span>`;
         } else {
             const isActiveOld = block.active === 'old';
             const isActiveNew = block.active === 'new';
             html += `<span class="pw-diff-group" data-index="${index}">`;
             if (block.oldText) {
-                html += `<span class="pw-idiff-old ${isActiveOld ? 'active' : 'inactive'}" contenteditable="${isActiveOld ? 'true' : 'false'}" data-idx="${index}" title="点击保留旧版">${_esc(block.oldText)}</span>`;
+                html += `<span class="pw-idiff-old ${isActiveOld ? 'active' : 'inactive'}" contenteditable="${isActiveOld ? 'true' : 'false'}" data-idx="${index}" title="点击保留旧版">${escapeHtml(block.oldText)}</span>`;
             }
             if (block.newText) {
-                html += `<span class="pw-idiff-new ${isActiveNew ? 'active' : 'inactive'}" contenteditable="${isActiveNew ? 'true' : 'false'}" data-idx="${index}" title="点击保留新版">${_esc(block.newText)}</span>`;
+                html += `<span class="pw-idiff-new ${isActiveNew ? 'active' : 'inactive'}" contenteditable="${isActiveNew ? 'true' : 'false'}" data-idx="${index}" title="点击保留新版">${escapeHtml(block.newText)}</span>`;
             }
             html += `</span>`;
         }

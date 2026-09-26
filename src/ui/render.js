@@ -1,5 +1,5 @@
 // UI 渲染函数簇：各视图的 DOM 输出，与 events.js（输入接线）分离。
-// window.pwExtraBooks/pwPinnedBooks 由 world-info.js 模块顶层初始化，这里只消费不初始化。
+// renderWiBooks 是例外——世界书选择是自洽控件（渲染＋接线＋持久化一体），状态在 store 书目字段。
 import { getContext } from "../../../../../extensions.js";
 import { log as logInfo, warn as logWarn } from "../log.js";
 import { TEXT } from "../strings.js";
@@ -59,7 +59,7 @@ export function renderApiProfiles() {
 export const renderWiBooks = async () => {
     const container = $('#pw-wi-container').empty();
     const baseBooks = await getContextWorldBooks();
-    const allBooks = [...new Set([...baseBooks, ...(window.pwExtraBooks || [])])];
+    const allBooks = [...new Set([...baseBooks, ...store.extraBooks])];
     
     if (allBooks.length === 0) { 
         container.html('<div style="opacity:0.6; padding:10px; text-align:center;">此角色未绑定世界书，请在“世界书”标签页手动添加或在酒馆主界面绑定。</div>'); 
@@ -68,7 +68,7 @@ export const renderWiBooks = async () => {
 
     for (const book of allBooks) {
         const isBound = baseBooks.includes(book);
-        const isPinned = window.pwPinnedBooks.includes(book);
+        const isPinned = store.pinnedBooks.includes(book);
         
         let statusLabel = '';
         if (isBound) statusLabel = '<span class="pw-bound-status">(已绑定)</span>';
@@ -119,11 +119,11 @@ export const renderWiBooks = async () => {
 
         $el.find('.pw-pin-book-icon').on('click', function(e) {
             e.stopPropagation();
-            if (window.pwPinnedBooks.includes(book)) {
-                window.pwPinnedBooks = window.pwPinnedBooks.filter(b => b !== book);
+            if (store.pinnedBooks.includes(book)) {
+                store.pinnedBooks = store.pinnedBooks.filter(b => b !== book);
                 toastr.info(TEXT.TOAST_UNPINNED(book));
             } else {
-                window.pwPinnedBooks.push(book);
+                store.pinnedBooks.push(book);
                 toastr.success(TEXT.TOAST_PINNED(book));
             }
             savePinnedBooks();
@@ -132,8 +132,8 @@ export const renderWiBooks = async () => {
 
         $el.find('.remove-book').on('click', (e) => {
             e.stopPropagation();
-            window.pwExtraBooks = window.pwExtraBooks.filter(b => b !== book);
-            window.pwPinnedBooks = window.pwPinnedBooks.filter(b => b !== book);
+            store.extraBooks = store.extraBooks.filter(b => b !== book);
+            store.pinnedBooks = store.pinnedBooks.filter(b => b !== book);
             savePinnedBooks();
             renderWiBooks();
         });

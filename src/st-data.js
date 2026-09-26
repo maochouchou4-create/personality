@@ -5,12 +5,31 @@ import { getContext } from "../../../../extensions.js";
 import { power_user } from "../../../../power-user.js";
 import { user_avatar } from "../../../../personas.js";
 
-export function getCharacterInfoText() {
+export function getCurrentCharacter() {
     const context = getContext();
-    const charId = context.characterId;
-    if (charId === undefined || !context.characters[charId]) return "";
-    const char = context.characters[charId];
-    const data = char.data || char;
+    if (context.characterId === undefined) return null;
+    return context.characters[context.characterId] || null;
+}
+
+// 角色数据真源判型：v2 卡的描述性字段在 char.data，v1 卡直接在顶层——消费 data.* 前必经此统一。
+export function getCurrentCharacterData() {
+    const char = getCurrentCharacter();
+    return char ? (char.data || char) : null;
+}
+
+// 用户显示名回退链（单一事实源）：DOM 头部名 → 备用头部名 → personas 映射显示名 → 调用方兜底。
+// personas 的值本就是显示名（不是描述）；兜底值由调用方按场景传（展示空串／生成 "User"）。
+export function getUserDisplayName(fallback = "User") {
+    const domVal = $('.persona_name').first().text().trim();
+    if (domVal) return domVal;
+    const altVal = $('h5#your_name').text().trim();
+    if (altVal) return altVal;
+    return power_user.personas[user_avatar] || fallback;
+}
+
+export function getCharacterInfoText() {
+    const data = getCurrentCharacterData();
+    if (!data) return "";
     let text = "";
     if (data.description) text += `Description:\n${data.description}\n`;
     if (data.personality) text += `Personality:\n${data.personality}\n`;
@@ -19,11 +38,8 @@ export function getCharacterInfoText() {
 }
 
 export function getCharacterGreetingsList() {
-    const context = getContext();
-    const charId = context.characterId;
-    if (charId === undefined || !context.characters[charId]) return [];
-    const char = context.characters[charId];
-    const data = char.data || char;
+    const data = getCurrentCharacterData();
+    if (!data) return [];
     const list = [];
     if (data.first_mes) {
         list.push({ label: "开场白 #0", content: data.first_mes });

@@ -1,5 +1,5 @@
 // world-info.generateSmartKeywords 输入输出契约：关键词抽取。
-// 本模块顶层挂载 window.*（world-info.js:9-13），由 tests/loader.mjs 的全局桩承载。
+// 本模块顶层读 localStorage（装载钉选书目到 store），由 tests/loader.mjs 的内存桩承载。
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { generateSmartKeywords } from "../src/world-info.js";

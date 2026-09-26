@@ -9,15 +9,14 @@ import { findPersona } from "../../../../utils.js";
 import { initPersona, setUserAvatar, getUserAvatars, user_avatar } from "../../../../personas.js";
 import { power_user } from "../../../../power-user.js";
 import { createWorldInfoEntry, reloadEditor } from "../../../../world-info.js";
+import { getCurrentCharacterData } from "./st-data.js";
 import { store, safeLocalStorageSet, STORAGE_KEY_WI_STATE, STORAGE_KEY_PINNED_BOOKS } from "./state.js";
 import { TEXT } from "./strings.js";
 import { error as logError, warn as logWarn } from "./log.js";
 
-window.pwExtraBooks = [];
-window.pwPinnedBooks = [];
-try { window.pwPinnedBooks = JSON.parse(localStorage.getItem(STORAGE_KEY_PINNED_BOOKS)) || []; } catch { window.pwPinnedBooks = []; }
-// Merge pinned books into extra on init
-window.pwExtraBooks = [...window.pwPinnedBooks];
+// 钉选书目装载：pinned 为持久层，extra＝pinned＋会话内手动追加（消费方一律走 getAllWorldBooks 合并）
+try { store.pinnedBooks = JSON.parse(localStorage.getItem(STORAGE_KEY_PINNED_BOOKS)) || []; } catch { store.pinnedBooks = []; }
+store.extraBooks = [...store.pinnedBooks];
 
 export function getPosAbbr(pos) {
     // 原生数字枚举（TauriTavern world-info.js：0 角色前/1 角色后/2 AN前/3 AN后/4 @深度/5 样例前/6 样例后）
@@ -191,10 +190,8 @@ export async function loadAvailableWorldBooks() {
 export async function getContextWorldBooks() {
     const context = getContext();
     const books = new Set();
-    const charId = context.characterId;
-    if (charId !== undefined && context.characters[charId]) {
-        const char = context.characters[charId];
-        const data = char.data || char;
+    const data = getCurrentCharacterData();
+    if (data) {
         // 主书（extensions.world）必须排在内嵌书之前——写回世界书取首个绑定书
         if (data.extensions?.world) books.add(data.extensions.world);
         if (data.character_book?.name) books.add(data.character_book.name);
@@ -223,5 +220,10 @@ export async function getWorldBookEntries(bookName) {
 }
 
 export function savePinnedBooks() {
-    try { localStorage.setItem(STORAGE_KEY_PINNED_BOOKS, JSON.stringify(window.pwPinnedBooks)); } catch(e) { logWarn(e); }
+    try { localStorage.setItem(STORAGE_KEY_PINNED_BOOKS, JSON.stringify(store.pinnedBooks)); } catch(e) { logWarn(e); }
+}
+
+// 全量书目＝绑定书＋手动追加书，去重后的单一合并口（生成取数／载入选择器／下拉渲染共用）。
+export async function getAllWorldBooks() {
+    return [...new Set([...(await getContextWorldBooks()), ...store.extraBooks])];
 }

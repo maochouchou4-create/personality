@@ -26,6 +26,9 @@ export const store = {
         curator: DEFAULT_PROMPTS.curator
     },
     availableWorldBooks: [],
+    // 书目选择域：pinned＝用户钉选常驻的书，extra＝钉选＋本会话手动追加；localStorage 由 world-info 顶层装载
+    extraBooks: [],
+    pinnedBooks: [],
     currentGreetingsList: [],
     wiSelectionCache: {},
     uiStateCache: { generationPreset: 'current' },

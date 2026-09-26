@@ -2,9 +2,9 @@
 // addPersonaButton 与 bindEvents 同文件：bindEvents 将其注册为 APP_READY/MOVABLE_PANELS_RESET 处理器，须同模块作用域。
 import { getContext } from "../../../../../extensions.js";
 import { store, loadData, saveData, loadState, saveState } from "../state.js";
-import { getActivePersonaDescription } from "../st-data.js";
+import { getActivePersonaDescription, getUserDisplayName } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
-import { upsertPersona, syncPersonaToWorldInfo, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
+import { upsertPersona, syncPersonaToWorldInfo, getAllWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
 import { TEXT } from "../strings.js";
 import { log as logInfo, error as logError } from "../log.js";
@@ -17,7 +17,86 @@ const BUTTON_ID = 'pw_persona_tool_btn';
 let isProcessing = false;
 let lastRefineRequest = "";
 
+// 按钮忙碌态：快照原 html 换入忙碌图标，返回恢复函数供 try/finally 收尾复位。
+const withButtonSpinner = ($btn, busyHtml) => {
+    const idleHtml = $btn.html();
+    $btn.html(busyHtml);
+    return () => $btn.html(idleHtml);
+};
+
+// 结果框应用三连（生成/载入共用收尾）：写结果→展开→折叠需求框→热存→触发自适应高度。
+const applyGeneratedResult = (text) => {
+    $('#pw-result-text').val(text);
+    $('#pw-result-area').fadeIn();
+    $('#pw-request').addClass('minimized');
+    saveCurrentState();
+    $('#pw-result-text').trigger('input');
+};
+
+// 载入遮罩关闭动画（打开遮罩的三处流程共用收尾）。
+const closeLoadOverlay = () => $('#pw-load-overlay').animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); });
+
 const forcePaint = () => new Promise(resolve => setTimeout(resolve, 50));
+
+// 编辑现场与 API 表单的防抖热存（1.2s 静默期）：写 userContext 与 localConfig（含自动热保存到当前选中配置）。
+let saveTimeout;
+const saveCurrentState = () => {
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        // 面板关闭后触发的事件残留不得把空值写进存档
+        if ($('#pw-request').length === 0) return;
+
+        const curReq = $('#pw-request').val();
+        const curRes = $('#pw-result-text').val();
+        const hasRes = $('#pw-result-area').is(':visible');
+
+        store.userContext.request = curReq;
+        store.userContext.result = curRes;
+        store.userContext.hasResult = hasRes;
+
+        saveData();
+
+        // Check if API settings exist before saving legacy
+        if ($('#pw-api-url').length > 0) {
+            const currentSaved = loadState();
+            let currentLc = currentSaved.localConfig || {};
+
+            currentLc.apiSource = $('#pw-api-source').val();
+            currentLc.indepApiUrl = $('#pw-api-url').val();
+            currentLc.indepApiKey = $('#pw-api-key').val();
+            currentLc.indepApiModel = $('#pw-api-model-select').val();
+            const timeoutInput = parseInt($('#pw-indep-timeout').val(), 10);
+            if (timeoutInput > 0) currentLc.indepTimeout = Math.min(1800, Math.max(30, timeoutInput));
+            const $streamEl = $('#pw-indep-stream');
+            if ($streamEl.length) currentLc.indepStream = $streamEl.prop('checked');
+            // max_tokens 现在由 resolveMaxTokens() 按模型名自动推断，不再有 UI 可配置
+            currentLc.extraBooks = store.extraBooks;
+
+            // --- 自动热保存至当前选中配置 ---
+            const activeId = $('#pw-api-profile-select').val();
+            const currentName = $('#pw-api-profile-name').val() || "未命名配置";
+
+            if (activeId && activeId !== 'custom') {
+                if (!currentLc.apiProfiles) currentLc.apiProfiles =[];
+                const prof = currentLc.apiProfiles.find(p => p.id === activeId);
+                if (prof) {
+                    prof.name = currentName;
+                    prof.url = currentLc.indepApiUrl;
+                    prof.key = currentLc.indepApiKey;
+                    prof.model = currentLc.indepApiModel;
+
+                    $(`#pw-api-profile-select option[value="${activeId}"]`).text(currentName);
+                }
+                currentLc.activeApiProfileId = activeId;
+            } else {
+                currentLc.activeApiProfileId = 'custom';
+            }
+
+            currentSaved.localConfig = currentLc;
+            saveState(currentSaved);
+        }
+    }, 1200);
+};
 
 // 生成 / 润色 / 重 Roll 三处共用的请求配置构造（单一事实源，避免三份字段集各写一遍后漂移）。
 // 变动字段（mode / request / currentText）由调用点传入，上下文与 API 设置统一从 DOM 读取。
@@ -228,65 +307,6 @@ export function bindEvents() {
     };
     $(document).on('input.pw', '.pw-auto-height', function () { adjustHeight(this); });
 
-    let saveTimeout;
-    const saveCurrentState = () => {
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
-            // [Fix 2] CRITICAL: Guard Clause to prevent wiping on close
-            if ($('#pw-request').length === 0) return;
-
-            const curReq = $('#pw-request').val();
-            const curRes = $('#pw-result-text').val();
-            const hasRes = $('#pw-result-area').is(':visible');
-
-            store.userContext.request = curReq;
-            store.userContext.result = curRes;
-            store.userContext.hasResult = hasRes;
-
-            saveData(); 
-            
-            // Check if API settings exist before saving legacy
-            if ($('#pw-api-url').length > 0) {
-                const currentSaved = loadState();
-                let currentLc = currentSaved.localConfig || {};
-
-                currentLc.apiSource = $('#pw-api-source').val();
-                currentLc.indepApiUrl = $('#pw-api-url').val();
-                currentLc.indepApiKey = $('#pw-api-key').val();
-                currentLc.indepApiModel = $('#pw-api-model-select').val();
-                const timeoutInput = parseInt($('#pw-indep-timeout').val(), 10);
-                if (timeoutInput > 0) currentLc.indepTimeout = Math.min(1800, Math.max(30, timeoutInput));
-                const $streamEl = $('#pw-indep-stream');
-                if ($streamEl.length) currentLc.indepStream = $streamEl.prop('checked');
-                // max_tokens 现在由 resolveMaxTokens() 按模型名自动推断，不再有 UI 可配置
-                currentLc.extraBooks = window.pwExtraBooks ||[];
-
-                // --- 自动热保存至当前选中配置 ---
-                const activeId = $('#pw-api-profile-select').val();
-                const currentName = $('#pw-api-profile-name').val() || "未命名配置";
-                
-                if (activeId && activeId !== 'custom') {
-                    if (!currentLc.apiProfiles) currentLc.apiProfiles =[];
-                    const prof = currentLc.apiProfiles.find(p => p.id === activeId);
-                    if (prof) {
-                        prof.name = currentName;
-                        prof.url = currentLc.indepApiUrl;
-                        prof.key = currentLc.indepApiKey;
-                        prof.model = currentLc.indepApiModel;
-                        
-                        $(`#pw-api-profile-select option[value="${activeId}"]`).text(currentName);
-                    }
-                    currentLc.activeApiProfileId = activeId;
-                } else {
-                    currentLc.activeApiProfileId = 'custom';
-                }
-
-                currentSaved.localConfig = currentLc;
-                saveState(currentSaved);
-            }
-        }, 1200); 
-    };           
-    
     $(document).on('input.pw change.pw', '#pw-request, #pw-result-text, #pw-wi-toggle, #pw-indep-stream, .pw-input, .pw-select', saveCurrentState);
 
     // --- 文本框焦点切换：点击哪个展开哪个 ---
@@ -411,11 +431,10 @@ export function bindEvents() {
 
         isProcessing = true;
         const $btn = $(this);
-        const originalHtml = $btn.html();
-        $btn.html('<i class="fa-solid fa-spinner fa-spin"></i> 生成中...');
+        const restoreBtn = withButtonSpinner($btn, '<i class="fa-solid fa-spinner fa-spin"></i> 生成中...');
 
         // 只要没点确认保存，旧文本就一直是 result-text 里的内容
-        const oldText = $('#pw-result-text').val(); 
+        const oldText = $('#pw-result-text').val();
 
         try {
             const contextData = await collectContextData();
@@ -436,7 +455,7 @@ export function bindEvents() {
             logError(e);
             toastr.error(TEXT.TOAST_REROLL_FAIL(e.message));
         } finally {
-            $btn.html(originalHtml);
+            restoreBtn();
             isProcessing = false;
         }
     });
@@ -461,7 +480,8 @@ export function bindEvents() {
         // 需求已改为可选（额外需求）：空需求＝纯全自动链，由 curator 按世界书自行策展
         const req = $('#pw-request').val();
         const $btn = $(this);
-        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 生成中...');
+        $btn.prop('disabled', true);
+        const restoreBtn = withButtonSpinner($btn, '<i class="fas fa-spinner fa-spin"></i> 生成中...');
         
         await forcePaint();
         
@@ -476,41 +496,32 @@ export function bindEvents() {
                 currentText: ''
             });
             const text = await runGeneration(config, config);
-            $('#pw-result-text').val(text);
-            $('#pw-result-area').fadeIn();
-            $('#pw-request').addClass('minimized');
-            saveCurrentState();
-            $('#pw-result-text').trigger('input');
+            applyGeneratedResult(text);
         } catch (e) { 
             logError(e);
             toastr.error(e.message); 
-        } finally { 
-            $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
+        } finally {
+            $btn.prop('disabled', false);
+            restoreBtn();
             isProcessing = false;
         }
     });
 
-    $(document).on('click.pw', '#pw-load-overlay-close', () => $('#pw-load-overlay').animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); }));
+    $(document).on('click.pw', '#pw-load-overlay-close', closeLoadOverlay);
 
     $(document).on('click.pw', '#pw-btn-load-current', async function() {
-        const $overlay = $('#pw-load-overlay');
         const $content = $('#pw-load-overlay-content');
 
         const applyContent = (content) => {
             if (!content) return toastr.warning(TEXT.TOAST_NO_VALID_CONTENT);
             if ($('#pw-result-text').val() && !confirm("当前结果框已有内容，确定要覆盖吗？")) return;
-            $('#pw-result-text').val(content);
-            $('#pw-result-area').fadeIn();
-            $('#pw-request').addClass('minimized');
-            $overlay.animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); });
+            applyGeneratedResult(content);
+            closeLoadOverlay();
             toastr.success(TEXT.TOAST_LOAD_CURRENT);
-            saveCurrentState();
-            $('#pw-result-text').trigger('input');
         };
 
         const showWiSelector = async (filterKeyword) => {
-            const boundBooks = await getContextWorldBooks();
-            const allBooks = [...new Set([...boundBooks, ...(window.pwExtraBooks || [])])];
+            const allBooks = await getAllWorldBooks();
             if (allBooks.length === 0) return toastr.warning(TEXT.TOAST_NO_WI_BOOKS);
 
             let allEntries = [];
@@ -530,7 +541,7 @@ export function bindEvents() {
                 if (filtered.length > 0) allEntries = filtered;
             }
 
-            if (allEntries.length === 0) { $overlay.animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); }); return toastr.warning(TEXT.TOAST_NO_WI_ENTRIES); }
+            if (allEntries.length === 0) { closeLoadOverlay(); return toastr.warning(TEXT.TOAST_NO_WI_ENTRIES); }
 
             const optionsHtml = allEntries.map((e, i) =>
                 `<option value="${i}">[${e.book}] ${e.displayName}</option>`
@@ -577,7 +588,7 @@ export function bindEvents() {
                 </div>
             </div>`);
 
-        $overlay.css('display', 'flex').css('opacity', 0).animate({opacity: 1}, 200);
+        $('#pw-load-overlay').css('display', 'flex').css('opacity', 0).animate({opacity: 1}, 200);
 
         $content.find('.pw-load-choice').on('click', async function() {
             const choice = $(this).data('choice');
@@ -585,7 +596,7 @@ export function bindEvents() {
                 applyContent(userPersona);
             } else {
                 $content.html('<div style="text-align:center; padding:20px; opacity:0.6;"><i class="fas fa-spinner fa-spin"></i> 正在读取世界书...</div>');
-                const userName = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || '';
+                const userName = getUserDisplayName('');
                 await showWiSelector(userName);
             }
         });
@@ -594,14 +605,14 @@ export function bindEvents() {
     $(document).on('click.pw', '#pw-btn-save-wi', async function () {
         const content = $('#pw-result-text').val();
         if (!content) return toastr.warning(TEXT.TOAST_EMPTY_FOR_SAVE);
-        const name = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || "User";
+        const name = getUserDisplayName();
         await syncPersonaToWorldInfo(name, content);
     });
 
     $(document).on('click.pw', '#pw-btn-apply', async function () {
         const content = $('#pw-result-text').val();
         if (!content) return toastr.warning(TEXT.TOAST_EMPTY_RESULT);
-        const name = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || "User";
+        const name = getUserDisplayName();
         try {
             await upsertPersona(name, content);
         } catch (e) {
@@ -682,7 +693,8 @@ export function bindEvents() {
         const url = $('#pw-api-url').val().replace(/\/$/, '');
         const key = $('#pw-api-key').val();
         const model = $('#pw-api-model-select').val();
-        const $btn = $(this).html('<i class="fas fa-spinner fa-spin"></i>');
+        const $btn = $(this);
+        const restoreBtn = withButtonSpinner($btn, '<i class="fas fa-spinner fa-spin"></i>');
         const isAnthropicStyle = url.toLowerCase().includes('anthropic.com') || url.includes('/v1/messages');
         try {
             if (isAnthropicStyle) {
@@ -714,10 +726,10 @@ export function bindEvents() {
                 else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
             }
         } catch (e) { toastr.error(TEXT.TOAST_CONN_FAIL); }
-        finally { $btn.html('<i class="fa-solid fa-plug"></i>'); }
+        finally { restoreBtn(); }
     });
 
-    $(document).on('click.pw', '#pw-wi-add', () => { const val = $('#pw-wi-select').val(); if (val && !window.pwExtraBooks.includes(val)) { window.pwExtraBooks.push(val); renderWiBooks(); } });
+    $(document).on('click.pw', '#pw-wi-add', () => { const val = $('#pw-wi-select').val(); if (val && !store.extraBooks.includes(val)) { store.extraBooks.push(val); renderWiBooks(); } });
 }
 
 export function addPersonaButton() {

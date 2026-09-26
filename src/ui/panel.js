@@ -6,14 +6,11 @@ import { DEFAULT_TEMPLATES } from "../prompts.js";
 import { defaultSettings } from "../api.js";
 import { getPresetHintText } from "../generation.js";
 import { loadAvailableWorldBooks } from "../world-info.js";
-import { power_user } from "../../../../../power-user.js";
-import { user_avatar } from "../../../../../personas.js";
+import { getCurrentCharacter, getUserDisplayName } from "../st-data.js";
 import { TEXT } from "../strings.js";
 import { warn as logWarn } from "../log.js";
+import { escapeHtml } from "../html.js";
 import { autoBindGreetings, renderApiProfiles, renderGreetingsList, renderWiBooks } from "./render.js";
-
-// 提示词只读视图用：正文含 <source_materials> 等类 XML 标签，不转义会被浏览器当 HTML 吞掉
-const escapeHtml = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const PROMPT_VIEW_SECTIONS = [
     {
@@ -62,14 +59,11 @@ export async function openCreatorPopup() {
 
     const config = { ...defaultSettings, ...savedState.localConfig };
 
-    let currentName = $('.persona_name').first().text().trim();
-    if (!currentName) currentName = $('h5#your_name').text().trim();
-    // persona_selected 字段在 TT 不存在；personas 的值才是显示名
-    if (!currentName) currentName = power_user.personas[user_avatar] || "User";
+    const currentName = getUserDisplayName();
 
     const activeData = store.userContext;
     
-    const charName = getContext().characters[getContext().characterId]?.name || "None";
+    const charName = getCurrentCharacter()?.name || "None";
     
     const headerTitle = `${TEXT.PANEL_TITLE}<span class="pw-header-subtitle">User:${currentName} & Char:${charName}</span>`;
 

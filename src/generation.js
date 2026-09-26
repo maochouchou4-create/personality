@@ -2,8 +2,8 @@
 // 生成链：首次生成固定两段（curator 策展 schema → personaGen 按 schema 填充）；refine 单段。
 // 提示词正文在 prompts.js，本文件只承载组装与调用链。
 import { store, loadData } from "./state.js";
-import { getCharacterInfoText } from "./st-data.js";
-import { getContextWorldBooks, loadWiSelection, getWorldBookEntries } from "./world-info.js";
+import { getCharacterInfoText, getCurrentCharacter, getUserDisplayName } from "./st-data.js";
+import { getAllWorldBooks, loadWiSelection, getWorldBookEntries } from "./world-info.js";
 import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse } from "./api.js";
 import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES } from "./prompts.js";
 import { parseYamlToBlocks } from "./yaml.js";
@@ -55,9 +55,7 @@ export async function collectContextData() {
     let greetingsContent = "";
 
     try {
-        const boundBooks = await getContextWorldBooks();
-        const manualBooks = window.pwExtraBooks || [];
-        const allBooks = [...new Set([...boundBooks, ...manualBooks])];
+        const allBooks = await getAllWorldBooks();
         if (allBooks.length > 20) allBooks.length = 20;
 
         for (const bookName of allBooks) {
@@ -369,11 +367,9 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
 
 export async function runGeneration(data, apiConfig) {
     let charName = "Char";
-    const ctx = getContext();
-    const currentChar = ctx.characterId !== undefined ? ctx.characters[ctx.characterId] : null;
+    const currentChar = getCurrentCharacter();
     if (currentChar) charName = currentChar.name || charName;
-    const currentName = $('.persona_name').first().text().trim() || 
-                        $('h5#your_name').text().trim() || "User";
+    const currentName = getUserDisplayName();
 
     if (!store.promptsCache || !store.promptsCache.personaGen) loadData(); 
 
