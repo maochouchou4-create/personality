@@ -11,7 +11,7 @@ export const defaultSettings = {
     // 流式输出。默认开启，避免 Cloudflare / 酒馆后端 / 中转站的 504 Gateway Timeout。
     indepStream: true,
     // 思考强度：off / low / medium / high。off 表示不向请求注入推理档位字段，
-    // 其余档位由 generation.js 按端点能力决定注入（OpenAI 兼容真生效、主 API best-effort、Anthropic 原生不发）。
+    // 其余档位由 generation.js 按端点能力决定注入（OpenAI 兼容真生效、Anthropic 原生不发）。
     thinkingEffort: 'off'
     // max_tokens 由 resolveMaxTokens() 按模型名自动推断，不放在设置里
 };
@@ -32,7 +32,7 @@ export function getIndepTimeoutSec() {
         if (!v && defaultSettings && Number(defaultSettings.indepTimeout) > 0) {
             v = Number(defaultSettings.indepTimeout);
         }
-    } catch {}
+    } catch { /* DOM/存储不可用时走默认值 */ }
     if (!v || v < 30) v = 300;      // 下限 30 秒，避免把请求秒 abort
     if (v > 1800) v = 1800;          // 上限 30 分钟，防止浏览器挂太久
     return v;
@@ -46,7 +46,7 @@ export function getIndepStreamEnabled() {
         if (saved && saved.localConfig && typeof saved.localConfig.indepStream === 'boolean') {
             return saved.localConfig.indepStream;
         }
-    } catch {}
+    } catch { /* DOM/存储不可用时走默认开启 */ }
     return true;
 }
 
@@ -63,7 +63,7 @@ export function resolveMaxTokens(modelName, isAnthropic) {
             const v = saved.localConfig.indepMaxTokensOverride;
             if (v >= 0 && v <= 200000) return v;
         }
-    } catch {}
+    } catch { /* 覆盖值不可读时按模型名推断 */ }
 
     const m = String(modelName || '').toLowerCase();
 
@@ -154,7 +154,7 @@ export async function readSSEResponse(res, isAnthropic, onDelta) {
             if (piece) {
                 fullText += piece;
                 sawAnyDelta = true;
-                if (typeof onDelta === 'function') { try { onDelta(piece); } catch {} }
+                if (typeof onDelta === 'function') { try { onDelta(piece); } catch { /* 回调失败不得中断流式收集 */ } }
             }
         }
     };

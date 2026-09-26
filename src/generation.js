@@ -8,6 +8,8 @@ import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSERes
 import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
 import { parseYamlToBlocks } from "./yaml.js";
 import { getContext } from "../../../../extensions.js";
+import { log as logInfo, warn as logWarn, error as logError } from "./log.js";
+import { TEXT } from "./strings.js";
 
 export const yieldToBrowser = () => new Promise(resolve => requestAnimationFrame(resolve));
 
@@ -81,11 +83,11 @@ export async function collectContextData() {
                         wiContent.push(`[DB:${bookName}] ${entry.content}`);
                     });
                 } catch(err) {
-                    console.warn(`[PW] Failed to auto-fetch book ${bookName}`, err);
+                    logWarn(`Failed to auto-fetch book ${bookName}`, err);
                 }
             }
         }
-    } catch (e) { console.warn(e); }
+    } catch (e) { logWarn(e); }
 
     const selectedIdx = $('#pw-greetings-select').val();
     if (selectedIdx !== "" && selectedIdx !== null && store.currentGreetingsList[selectedIdx]) {
@@ -158,7 +160,7 @@ export function getRealSystemPrompt(selectedPreset) {
             const preset = pm.getCompletionPresetByName(selectedPreset);
             if (preset) return extractSystemParts(preset);
         } catch (e) {
-            console.warn(`[PW] Failed to load specific preset '${selectedPreset}':`, e);
+            logWarn(`Failed to load specific preset '${selectedPreset}':`, e);
         }
     }
 
@@ -173,7 +175,7 @@ export function getRealSystemPrompt(selectedPreset) {
         if (systemParts && systemParts.trim().length > 0) {
             return systemParts;
         }
-    } catch (e) { console.warn("[PW] 从预设获取 System Prompt 失败:", e); }
+    } catch (e) { logWarn("从预设获取 System Prompt 失败:", e); }
     
     // Last resort fallback
     if (SillyTavern.chatCompletionSettings) {
@@ -203,7 +205,7 @@ export function getPresetHintText(val) {
 // 单次模型调用：组装 system（预设）＋世界书＋用户消息＋prefill，自带超时与中断控制器。
 // 生成链每段各调一次，从而每段超时独立；API 配置 / 流式 / prefill 兼容逻辑三段共用。
 async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent, label }) {
-    console.log(`[PW] Sending Prompt (${label})...`);
+    logInfo(`Sending Prompt (${label})...`);
     
     let responseContent = "";
     const controller = new AbortController();
@@ -212,7 +214,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
         ? Number(apiConfig.indepTimeout)
         : getIndepTimeoutSec();
     let timedOutBySelf = false;
-    const timeoutId = setTimeout(() => { timedOutBySelf = true; try { controller.abort(); } catch {} }, timeoutSec * 1000);
+    const timeoutId = setTimeout(() => { timedOutBySelf = true; try { controller.abort(); } catch { /* abort 对已结束的请求抛错无害 */ } }, timeoutSec * 1000);
     // 流式开关：默认 ON。非流式请求长 YAML 时会被反代 504 Gateway Timeout。
     const useStream = (apiConfig && typeof apiConfig.indepStream === 'boolean')
         ? apiConfig.indepStream
@@ -221,7 +223,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
     // Anthropic 原生端点严格 schema 对未知字段直接 400，故该分支不发（其正确映射是 thinking.budget_tokens，语义不同，不做）。
     const effort = (apiConfig && apiConfig.thinkingEffort) || 'off';
     // max_tokens 由 resolveMaxTokens() 按模型名自动推断，不再由用户配置
-    console.log(`[PW] Request timeout=${timeoutSec}s, stream=${useStream}`);
+    logInfo(`Request timeout=${timeoutSec}s, stream=${useStream}`);
 
     try {
         const promptArray = [];
@@ -303,7 +305,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
                     try {
                         const errJson = JSON.parse(errText);
                         if (errJson.error && errJson.error.message) errText = errJson.error.message;
-                    } catch (e) {}
+                    } catch { /* 响应体不是 JSON 时保留原文 */ }
                     if (errText.length > 200) errText = errText.substring(0, 200) + "...";
                     throw new Error(`API Error (${res.status}): ${errText}`);
                 }
@@ -356,8 +358,8 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
             }
 
             if (prefillContent && isBadRequest) {
-                console.warn("[PW] Generation failed (400/Bad Request), retrying without prefill...", err);
-                toastr.info("API 返回 400 错误 (可能是 Gemini 等模型不支持 Prefill)，正在尝试兼容模式重试...");
+                logWarn("Generation failed (400/Bad Request), retrying without prefill...", err);
+                toastr.info(TEXT.TOAST_PREFILL_RETRY);
                 responseContent = await doRequest(promptArrayNoPrefill);
             } else if (isNetwork) {
                 throw new Error(`网络请求失败：${errStr}。请检查中转站地址、API Key、网络连通性（梯子 / 公司网络代理等可能拦截）。`);
@@ -367,7 +369,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
         }
 
     } catch (e) {
-        console.error("[PW] 生成错误:", e);
+        logError("生成错误:", e);
         throw e;
     } finally { 
         clearTimeout(timeoutId); 
@@ -440,7 +442,7 @@ export async function runGeneration(data, apiConfig) {
         const raw = await requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: PREFILL_SCHEMA, label: 'curator' });
         const curated = raw ? stripYamlFence(raw, PREFILL_SCHEMA) : "";
         if (!isParsableSchema(curated)) {
-            console.warn("[PW] 策展输出为空或不可解析，回退默认模板：", curated);
+            logWarn("策展输出为空或不可解析，回退默认模板：", curated);
             return DEFAULT_TEMPLATES.user;
         }
         return curated;

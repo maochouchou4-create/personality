@@ -7,6 +7,7 @@ import { defaultSettings } from "../api.js";
 import { getPresetHintText } from "../generation.js";
 import { loadAvailableWorldBooks } from "../world-info.js";
 import { TEXT } from "../strings.js";
+import { warn as logWarn } from "../log.js";
 import { autoBindGreetings, renderApiProfiles, renderGreetingsList, renderWiBooks } from "./render.js";
 
 // 提示词只读视图用：正文含 <source_materials> 等类 XML 标签，不转义会被浏览器当 HTML 吞掉
@@ -89,7 +90,7 @@ export async function openCreatorPopup() {
         });
     } catch (e) {
         // 宿主预设管理器未就绪时下拉框只显示默认两项，不阻断面板打开
-        console.warn("[PW] 预设列表加载失败:", e);
+        logWarn("预设列表加载失败:", e);
     }
 
     // [Fix 14] Initial Hint Text

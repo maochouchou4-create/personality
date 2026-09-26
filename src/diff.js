@@ -1,6 +1,7 @@
 // 润色对比视图域：LCS 块计算、内联渲染与结果组装。
 // 渲染只服务本域（#pw-diff-merge-list），视图状态在 store.currentDiffBlocks。
 import { store } from "./state.js";
+import { TEXT } from "./strings.js";
 
 // ============================================================================
 // 新增：独立的 Diff 渲染函数 (供润色和重Roll复用)
@@ -96,7 +97,7 @@ export function renderInlineDiff() {
     $container.attr('contenteditable', 'true').html(html);
 
     let changeCount = store.currentDiffBlocks.filter(b => b.type === 'diff').length;
-    if (changeCount === 0) toastr.info("没有检测到内容变化");
+    if (changeCount === 0) toastr.info(TEXT.TOAST_NO_CHANGES);
 }
 
 export function assembleDiffResult() {

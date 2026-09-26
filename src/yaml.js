@@ -1,5 +1,6 @@
 // YAML 人设文本解析：按顶层键切分为区块 Map。生产消费方已随模版 chips 删除；
-// 保留作模板结构契约的测试断言入口。纯函数、零依赖。
+// 保留作模板结构契约的测试断言入口。除诊断出口 log 外零依赖。
+import { error as logError } from "./log.js";
 // ============================================================================
 // 数据解析
 // ============================================================================
@@ -66,6 +67,6 @@ export function parseYamlToBlocks(text) {
             }
         });
         flushBuffer();
-    } catch (e) { console.error("[PW] Parse Error:", e); }
+    } catch (e) { logError("Parse Error:", e); }
     return map;
 }

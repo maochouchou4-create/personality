@@ -1,6 +1,8 @@
 // UI 渲染函数簇：各视图的 DOM 输出，与 events.js（输入接线）分离。
 // window.pwExtraBooks/pwPinnedBooks 由 world-info.js 模块顶层初始化，这里只消费不初始化。
 import { getContext } from "../../../../../extensions.js";
+import { log as logInfo, warn as logWarn } from "../log.js";
+import { TEXT } from "../strings.js";
 import { store, loadState } from "../state.js";
 import { getCharacterGreetingsList } from "../st-data.js";
 import { getContextWorldBooks, getWorldBookEntries, loadWiSelection, saveWiSelection, savePinnedBooks, getPosFilterCode, getPosAbbr } from "../world-info.js";
@@ -19,11 +21,11 @@ export function autoBindGreetings() {
                     $('#pw-greetings-toggle-bar').show().html('<i class="fa-solid fa-angle-down"></i> 展开预览');
                 }
 
-                console.log(`[PW] Auto-bound greetings to Swipe #${swipeId}`);
+                logInfo(`Auto-bound greetings to Swipe #${swipeId}`);
             }
         }
     } catch (e) {
-        console.warn("[PW] Auto-bind greetings failed:", e);
+        logWarn("Auto-bind greetings failed:", e);
     }
 }
 
@@ -252,7 +254,7 @@ export const renderWiBooks = async () => {
                                  const originalEnabled = $(this).data('original-enabled');
                                  $(this).find('.pw-wi-check').prop('checked', originalEnabled).trigger('change');
                              });
-                             toastr.info("已重置为世界书原始状态");
+                             toastr.info(TEXT.TOAST_RESET_TO_WI);
                         });
 
                         $list.append($tools);

@@ -6,6 +6,7 @@ import { getContext } from "../../../../extensions.js";
 import { saveSettingsDebounced } from "../../../../../script.js";
 import { store, safeLocalStorageSet, STORAGE_KEY_WI_STATE, STORAGE_KEY_PINNED_BOOKS } from "./state.js";
 import { TEXT } from "./strings.js";
+import { error as logError, warn as logWarn } from "./log.js";
 
 window.pwExtraBooks = [];
 window.pwPinnedBooks = [];
@@ -127,7 +128,7 @@ export async function syncPersonaToWorldInfo(userName, content) {
         await getContext().saveWorldInfo(targetBook, data, true);
         toastr.success(TEXT.TOAST_WI_SUCCESS(targetBook, entryTitle) + `\n触发词: ${entryKeys.join(', ')}`);
     } catch (e) {
-        console.error("[PW] World Info Sync Error:", e);
+        logError("World Info Sync Error:", e);
         toastr.error(TEXT.TOAST_WI_WRITE_FAIL + e.message);
     }
 }
@@ -168,13 +169,13 @@ export async function getWorldBookEntries(bookName) {
         }));
     } catch (e) {
         // 单书读取失败（不存在/宿主异常）不阻断其余书目，消费方按空书处理
-        console.warn("[PW] Failed to load world book entries:", bookName, e);
+        logWarn("Failed to load world book entries:", bookName, e);
         return [];
     }
 }
 
 export function savePinnedBooks() {
-    try { localStorage.setItem(STORAGE_KEY_PINNED_BOOKS, JSON.stringify(window.pwPinnedBooks)); } catch(e) { console.warn(e); }
+    try { localStorage.setItem(STORAGE_KEY_PINNED_BOOKS, JSON.stringify(window.pwPinnedBooks)); } catch(e) { logWarn(e); }
 }
 
 export const getPosAbbr = (pos) => {

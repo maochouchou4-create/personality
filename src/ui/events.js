@@ -7,6 +7,7 @@ import { runGeneration, collectContextData, getPresetHintText } from "../generat
 import { forceSavePersona, syncPersonaToWorldInfo, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
 import { TEXT } from "../strings.js";
+import { log as logInfo, error as logError } from "../log.js";
 import { renderApiProfiles, renderWiBooks } from "./render.js";
 import { openCreatorPopup } from "./panel.js";
 
@@ -32,7 +33,7 @@ export function bindEvents() {
     if (window.stPersonaWeaverBound) return;
     window.stPersonaWeaverBound = true;
 
-    console.log("[PW] Binding Events (Standard)...");
+    logInfo("Binding Events (Standard)...");
 
     const context = getContext();
     if (context && context.eventSource) {
@@ -71,7 +72,7 @@ export function bindEvents() {
         $('#pw-api-key').val('');
         $('#pw-api-model-select').empty().append('<option value="">请填写URL和Key后获取</option>');
         
-        toastr.success("已创建空白配置，修改将自动保存");
+        toastr.success(TEXT.TOAST_PROFILE_CREATED);
     });
 
     // 2. 切换配置
@@ -114,7 +115,7 @@ export function bindEvents() {
     $(document).on('click.pw', '#pw-api-profile-delete', function(e) {
         e.preventDefault();
         const activeId = $('#pw-api-profile-select').val();
-        if (!activeId || activeId === 'custom') return toastr.warning("请先选择一个已保存的配置");
+        if (!activeId || activeId === 'custom') return toastr.warning(TEXT.TOAST_SELECT_PROFILE);
         if (!confirm("确定要删除当前选中的 API 配置吗？")) return;
 
         const savedState = loadState();
@@ -127,7 +128,7 @@ export function bindEvents() {
             
             renderApiProfiles();
             $('#pw-api-profile-select').trigger('change.pw'); 
-            toastr.success("已删除配置");
+            toastr.success(TEXT.TOAST_PROFILE_DELETED);
         }
     });
 
@@ -169,9 +170,9 @@ export function bindEvents() {
 
     $(document).on('click.pw', '#pw-copy-persona', function() {
         const text = $('#pw-result-text').val();
-        if(!text) return toastr.warning("没有内容可复制");
+        if(!text) return toastr.warning(TEXT.TOAST_NOTHING_TO_COPY);
         navigator.clipboard.writeText(text);
-        toastr.success("人设已复制");
+        toastr.success(TEXT.TOAST_COPIED);
     });
 
     $(document).on('click.pw', '.pw-tab', function () {
@@ -360,7 +361,7 @@ export function bindEvents() {
 
         const refineReq = $('#pw-refine-input').val();
         if (!refineReq) {
-            toastr.warning("请输入润色意见");
+            toastr.warning(TEXT.TOAST_REFINE_EMPTY);
             store.isProcessing = false;
             return;
         }
@@ -391,8 +392,8 @@ export function bindEvents() {
             $('#pw-diff-overlay').fadeIn();
             $('#pw-refine-input').val(''); // 清空输入框
         } catch (e) { 
-            console.error(e);
-            toastr.error("润色失败: " + e.message); 
+            logError(e);
+            toastr.error(TEXT.TOAST_REFINE_FAIL(e.message)); 
         } finally { 
             $btn.removeClass('fa-spinner fa-spin').addClass('fa-magic');
             store.isProcessing = false;
@@ -404,7 +405,7 @@ export function bindEvents() {
         e.preventDefault();
         if (store.isProcessing) return;
         if (!store.lastRefineRequest) {
-            toastr.warning("未找到上一次的润色要求");
+            toastr.warning(TEXT.TOAST_NO_LAST_REQUEST);
             return;
         }
 
@@ -429,11 +430,11 @@ export function bindEvents() {
             // 复用渲染函数，原地刷新 Diff 界面
             renderDiffComparison(oldText, responseText);
             
-            toastr.success("已重新生成并更新对比！");
+            toastr.success(TEXT.TOAST_REROLLED);
 
         } catch (e) {
-            console.error(e);
-            toastr.error("重Roll失败: " + e.message);
+            logError(e);
+            toastr.error(TEXT.TOAST_REROLL_FAIL(e.message));
         } finally {
             $btn.html(originalHtml);
             store.isProcessing = false;
@@ -445,7 +446,7 @@ export function bindEvents() {
         $('#pw-result-text').val(finalContent).trigger('input');
         $('#pw-diff-overlay').fadeOut();
         saveCurrentState();
-        toastr.success("修改已应用");
+        toastr.success(TEXT.TOAST_APPLIED);
     });
 
     $(document).on('click.pw', '#pw-diff-cancel', () => $('#pw-diff-overlay').fadeOut());
@@ -481,7 +482,7 @@ export function bindEvents() {
             saveCurrentState();
             $('#pw-result-text').trigger('input');
         } catch (e) { 
-            console.error(e);
+            logError(e);
             toastr.error(e.message); 
         } finally { 
             $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
@@ -496,7 +497,7 @@ export function bindEvents() {
         const $content = $('#pw-load-overlay-content');
 
         const applyContent = (content) => {
-            if (!content) return toastr.warning("未找到有效内容");
+            if (!content) return toastr.warning(TEXT.TOAST_NO_VALID_CONTENT);
             if ($('#pw-result-text').val() && !confirm("当前结果框已有内容，确定要覆盖吗？")) return;
             $('#pw-result-text').val(content);
             $('#pw-result-area').fadeIn();
@@ -510,7 +511,7 @@ export function bindEvents() {
         const showWiSelector = async (filterKeyword) => {
             const boundBooks = await getContextWorldBooks();
             const allBooks = [...new Set([...boundBooks, ...(window.pwExtraBooks || [])])];
-            if (allBooks.length === 0) return toastr.warning("未找到可用的世界书");
+            if (allBooks.length === 0) return toastr.warning(TEXT.TOAST_NO_WI_BOOKS);
 
             let allEntries = [];
             for (const bookName of allBooks) {
@@ -529,7 +530,7 @@ export function bindEvents() {
                 if (filtered.length > 0) allEntries = filtered;
             }
 
-            if (allEntries.length === 0) { $overlay.animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); }); return toastr.warning("世界书中没有找到相关条目"); }
+            if (allEntries.length === 0) { $overlay.animate({opacity: 0}, 200, function() { $(this).css('display', 'none'); }); return toastr.warning(TEXT.TOAST_NO_WI_ENTRIES); }
 
             const optionsHtml = allEntries.map((e, i) =>
                 `<option value="${i}">[${e.book}] ${e.displayName}</option>`
@@ -592,14 +593,14 @@ export function bindEvents() {
 
     $(document).on('click.pw', '#pw-btn-save-wi', async function () {
         const content = $('#pw-result-text').val();
-        if (!content) return toastr.warning("内容为空，无法保存");
+        if (!content) return toastr.warning(TEXT.TOAST_EMPTY_FOR_SAVE);
         const name = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || "User";
         await syncPersonaToWorldInfo(name, content);
     });
 
     $(document).on('click.pw', '#pw-btn-apply', async function () {
         const content = $('#pw-result-text').val();
-        if (!content) return toastr.warning("内容为空");
+        if (!content) return toastr.warning(TEXT.TOAST_EMPTY_RESULT);
         const name = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || "User";
         await forceSavePersona(name, content);
         toastr.success(TEXT.TOAST_SAVE_SUCCESS(name));
@@ -644,7 +645,7 @@ export function bindEvents() {
                         }
                     });
                     if (res.ok) data = await res.json();
-                } catch { }
+                } catch { /* 探测端点失败则落回 OpenAI 兼容探测 */ }
             }
             if (!data) {
                 // 规范化：支持 https://x/ , https://x/v1 , https://x/v1/chat/completions 等写法
@@ -657,7 +658,7 @@ export function bindEvents() {
                     try {
                         const res = await fetch(ep, { method: 'GET', headers: { 'Authorization': `Bearer ${key}` } });
                         if (res.ok) { data = await res.json(); break; }
-                    } catch { }
+                    } catch { /* 换下一个候选端点 */ }
                 }
             }
             if (!data) throw new Error("连接失败或无法获取模型列表");
@@ -695,7 +696,7 @@ export function bindEvents() {
                         messages: [{ role: 'user', content: 'Hi' }]
                     })
                 });
-                if (res.ok) toastr.success("连接成功！");
+                if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
                 else toastr.error(`失败: ${res.status}`);
             } else {
                 const cleanBase = url.replace(/\/chat\/completions$/, '');
@@ -704,10 +705,10 @@ export function bindEvents() {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
                     body: JSON.stringify({ model: model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 })
                 });
-                if (res.ok) toastr.success("连接成功！");
+                if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
                 else toastr.error(`失败: ${res.status}`);
             }
-        } catch (e) { toastr.error("请求发送失败"); }
+        } catch (e) { toastr.error(TEXT.TOAST_CONN_FAIL); }
         finally { $btn.html('<i class="fa-solid fa-plug"></i>'); }
     });
 
