@@ -1,8 +1,8 @@
 // ST 运行时取数适配层：角色信息 / 开场白 / 用户人格描述的唯一取数通道，供生成域与 UI 侧消费。
 // SillyTavern / window / $ 为宿主全局，不经 import；getContext 走 ST 的 extensions 模块边界。
 import { getContext } from "../../../../extensions.js";
-import { power_user } from "../../../../scripts/power-user.js";
-import { user_avatar } from "../../../../scripts/personas.js";
+import { power_user } from "../../../../power-user.js";
+import { user_avatar } from "../../../../personas.js";
 
 export function getCharacterInfoText() {
     const context = getContext();

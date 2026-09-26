@@ -1,13 +1,14 @@
 // 世界书域：绑定书目发现、条目读取、勾选持久化、人设写回世界书、
 // 智能关键词抽取与跨角色钉选。WI 专属持久化归本模块；键常量的
 // 单一事实源在 state.js，经 import 消费。
-// 宿主操作全部走 getContext() 挂载方法，不新增宿主模块 import（check-imports 白名单只认 extensions/script）。
+// 宿主模块 import（4 段上溯已落在宿主 scripts/ 目录内，specifier 不带 scripts/ 段）；
+// 白名单见 scripts/check-imports.mjs 的 EXTERNAL。
 import { getContext } from "../../../../extensions.js";
 import { saveSettingsDebounced, default_user_avatar, getRequestHeaders } from "../../../../../script.js";
-import { findPersona } from "../../../../scripts/utils.js";
-import { initPersona, setUserAvatar, getUserAvatars, user_avatar } from "../../../../scripts/personas.js";
-import { power_user } from "../../../../scripts/power-user.js";
-import { createWorldInfoEntry, reloadEditor } from "../../../../scripts/world-info.js";
+import { findPersona } from "../../../../utils.js";
+import { initPersona, setUserAvatar, getUserAvatars, user_avatar } from "../../../../personas.js";
+import { power_user } from "../../../../power-user.js";
+import { createWorldInfoEntry, reloadEditor } from "../../../../world-info.js";
 import { store, safeLocalStorageSet, STORAGE_KEY_WI_STATE, STORAGE_KEY_PINNED_BOOKS } from "./state.js";
 import { TEXT } from "./strings.js";
 import { error as logError, warn as logWarn } from "./log.js";
@@ -49,34 +50,45 @@ export function saveWiSelection(bookName, uids) {
 // persona_selected 字段在 TT 不存在，选中态走 setUserAvatar（user_avatar）。
 export async function upsertPersona(displayName, description) {
     const existing = findPersona({ name: displayName, allowAvatar: false, preferCurrentPersona: false });
-    const avatarId = existing?.avatar;
+    const avatarId = existing?.avatar ?? await createAvatarPersona(displayName, description);
 
-    if (avatarId) {
+    if (existing) {
         power_user.personas[avatarId] = displayName;
         const descriptor = power_user.persona_descriptions[avatarId] ??= {};
         descriptor.description = description;
-        // 改的是当前选中人设时必须同步单数镜像，否则宿主 applyPersonaDescription 会用旧镜像盖回
-        if (user_avatar === avatarId) power_user.persona_description = description;
+        if (user_avatar === avatarId) {
+            // 改的是当前选中人设：setUserAvatar 对同人设会早退、宿主无人监听 PERSONA_UPDATED，
+            // 镜像与宿主描述框必须手动刷——DOM 是宿主权威编辑面，不刷会被其 input 回写旧值盖回
+            power_user.persona_description = description;
+            $('#persona_description').val(description);
+        }
         saveSettingsDebounced();
         const context = getContext();
         await context.eventSource.emit(context.eventTypes.PERSONA_UPDATED, avatarId);
-    } else {
-        // 新人设：avatarId 约定照抄宿主 createDummyPersona（personas.js:528）
-        const newAvatarId = `${Date.now()}-${displayName.replace(/[^a-zA-Z0-9]/g, '')}.png`;
-        const blob = await (await fetch(default_user_avatar)).blob();
-        const form = new FormData();
-        form.append('avatar', new File([blob], 'avatar.png', { type: 'image/png' }));
-        form.append('overwrite_name', newAvatarId);
-        const res = await fetch('/api/avatars/upload', {
-            method: 'POST',
-            headers: getRequestHeaders({ omitContentType: true }),
-            body: form,
-        });
-        if (!res.ok) throw new Error(`头像上传失败 (${res.status})`);
-        await getUserAvatars(false);
-        await initPersona(newAvatarId, displayName, description, '', { silent: true });
-        if (user_avatar !== newAvatarId) await setUserAvatar(newAvatarId, { toastPersonaNameChange: false });
     }
+    // 应用＝该人设成为当前人设；跨人设切换时 setUserAvatar 内部的 selectCurrentPersona
+    // 会同步 name1、单数镜像与描述框 DOM；同人设已在上方手动刷过
+    if (user_avatar !== avatarId) await setUserAvatar(avatarId, { toastPersonaNameChange: false });
+}
+
+// 新人设创建：上传默认头像 PNG（人设持久化载体，文件不存在即「no longer exists」）
+// → initPersona 写 name 与描述 descriptor。返回落盘的 avatarId（以上传响应为准）。
+async function createAvatarPersona(displayName, description) {
+    const preferredId = `${Date.now()}-${displayName.replace(/[^a-zA-Z0-9]/g, '')}.png`; // 约定照抄宿主 createDummyPersona
+    const blob = await (await fetch(default_user_avatar)).blob();
+    const form = new FormData();
+    form.append('avatar', new File([blob], 'avatar.png', { type: 'image/png' }));
+    form.append('overwrite_name', preferredId);
+    const res = await fetch('/api/avatars/upload', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+        body: form,
+    });
+    if (!res.ok) throw new Error(`头像上传失败 (${res.status})`);
+    const avatarId = (await res.json()).path || preferredId;
+    await getUserAvatars(false);
+    await initPersona(avatarId, displayName, description, '', { silent: true });
+    return avatarId;
 }
 
 // 清理 personas 里指向不存在头像文件的假键（旧版插件写入的脏数据；纯内存删除＋存盘，
