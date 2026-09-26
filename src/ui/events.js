@@ -43,7 +43,9 @@ export function bindEvents() {
     window.openPersonaWeaver = openCreatorPopup;
 // --- [新增] API 预设表单管理事件 ---
     
-    // 1. 新建配置 (生成空白档并自动选中)
+    // 1. 保存为配置：把当前表单（含命名框）整体收进新配置并选中，不清空表单——
+    //    旧「新建空白」语义下未选中配置时填的内容没有保存路径，且清空会砸掉已填字段。
+    //    已选配置的后续改动由 saveCurrentState 的自动热保存写回，此处只负责从无到有。
     $(document).on('click.pw', '#pw-api-profile-add', function(e) {
         e.preventDefault();
         
@@ -52,27 +54,21 @@ export function bindEvents() {
         if (!lc.apiProfiles) lc.apiProfiles =[];
         
         const newId = Date.now().toString();
-        const newName = "新配置 " + (lc.apiProfiles.length + 1);
-        
+        const newName = $('#pw-api-profile-name').val().trim() || "新配置 " + (lc.apiProfiles.length + 1);
+
         lc.apiProfiles.push({
             id: newId,
             name: newName,
-            url: '',
-            key: '',
-            model: ''
+            url: $('#pw-api-url').val(),
+            key: $('#pw-api-key').val(),
+            model: $('#pw-api-model-select').val() || $('#pw-api-model').val() || ''
         });
         lc.activeApiProfileId = newId;
         savedState.localConfig = lc;
         saveState(savedState);
-        
-        // 刷新列表并清空表单
+
         renderApiProfiles();
-        $('#pw-api-profile-name').val(newName);
-        $('#pw-api-url').val('').focus(); // 自动聚焦 URL 框方便输入
-        $('#pw-api-key').val('');
-        $('#pw-api-model-select').empty().append('<option value="">请填写URL和Key后获取</option>');
-        
-        toastr.success(TEXT.TOAST_PROFILE_CREATED);
+        toastr.success(TEXT.TOAST_PROFILE_SAVED(newName));
     });
 
     // 2. 切换配置

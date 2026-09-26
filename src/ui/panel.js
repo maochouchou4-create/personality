@@ -249,7 +249,7 @@ export async function openCreatorPopup() {
                         <label>配置预设</label>
                         <div style="flex:1; display:flex; gap:5px; width:100%; min-width: 0;">
                             <select id="pw-api-profile-select" class="pw-select" style="flex:1;"></select>
-                            <button id="pw-api-profile-add" class="pw-btn primary" title="新建空白配置" style="width:auto; padding: 6px 10px;"><i class="fa-solid fa-plus"></i></button>
+                            <button id="pw-api-profile-add" class="pw-btn primary" title="把当前表单保存为新配置" style="width:auto; padding: 6px 10px;"><i class="fa-solid fa-floppy-disk"></i></button>
                             <button id="pw-api-profile-delete" class="pw-btn danger" title="删除当前配置" style="width:auto; padding: 6px 10px;"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </div>

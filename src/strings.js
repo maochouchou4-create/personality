@@ -11,7 +11,7 @@ export const TEXT = {
     TOAST_QUOTA_ERROR: "浏览器存储空间不足 (Quota Exceeded)，请清理浏览器存储。",
     TOAST_NO_CHANGES: "没有检测到内容变化",
     TOAST_PREFILL_RETRY: "API 返回 400 错误 (可能是 Gemini 等模型不支持 Prefill)，正在尝试兼容模式重试...",
-    TOAST_PROFILE_CREATED: "已创建空白配置，修改将自动保存",
+    TOAST_PROFILE_SAVED: (name) => `已保存为配置：${name}（后续修改自动保存）`,
     TOAST_SELECT_PROFILE: "请先选择一个已保存的配置",
     TOAST_PROFILE_DELETED: "已删除配置",
     TOAST_NOTHING_TO_COPY: "没有内容可复制",
