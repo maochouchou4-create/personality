@@ -53,34 +53,21 @@ export function safeLocalStorageSet(key, value) {
 export function loadData() {
     try {
         const p = JSON.parse(localStorage.getItem(STORAGE_KEY_PROMPTS));
-        // v3.4.6 引入的"生命周期/时间线豁免"标识，用于识别旧版默认值
-        const V345_PROHIBIT_SIG = 'Do NOT output empty strings, "未知", "unknown", "N/A", "待定", "TBD", "暂无", null, "-", or placeholders.';
-        const hasLifecycleExc = (s) => s.includes('LIFECYCLE / TIMELINE EXCEPTION') || s.includes('尚未发生（角色');
-
-        // 生成/润色 Prompt 迁移：
-        //  - v3.4.3 及更早默认（无 MANDATORY COMPLETENESS / 无 PATCH MODE）→ 升级，修复纯润色字段被清空
-        //  - v3.4.4/v3.4.5 旧默认（有 MANDATORY 但无 LIFECYCLE EXCEPTION，且保留 v3.4.5 原句）→ 升级，
-        //    解决"角色未到中年阶段时字段被强行编造"以及自定义模板里同类时间锁字段的问题
-        //  - 用户深度自定义内容保持不变
-        const migrateGenPrompt = (stored, def, signature) => {
-            if (!stored) return def;
-            const hasNewGuard = stored.includes('MANDATORY COMPLETENESS') || stored.includes('NEVER leave any field blank');
-            if (hasNewGuard) {
-                if (!hasLifecycleExc(stored) && stored.includes(signature) && stored.includes(V345_PROHIBIT_SIG)) {
-                    return def;
-                }
-                return stored;
-            }
-            const looksLikeOldDefault = stored.includes(signature)
-                && stored.includes('Output ONLY the YAML data matching the schema.');
-            if (looksLikeOldDefault) return def;
-            return stored;
+        // 提示词正文中文化迁移：存量缓存里存着旧英文默认全文，按标志性首行识别旧默认并整体
+        // 换成当前默认；用户自定义过的正文不会带这些首行，保持不动。改默认正文时必须同步
+        // 维护这组签名，否则老缓存会遮蔽新默认。
+        const OLD_DEFAULT_SIGS = {
+            personaGen: '[Task: Generate/Refine User Profile]',
+            curator: '[TASK: CURATE_PROFILE_SCHEMA]',
+            initial: '[TASK: DATABASE_RECOVERY_OPERATION]'
         };
+        const migratePrompt = (stored, def, sig) =>
+            (stored && !stored.includes(sig)) ? stored : def;
         // 按当前键集合重建缓存对象：存量里的退役键（旧版模板生成提示词）随之自然剥掉，无需逐键删除。
         store.promptsCache = {
-            personaGen: migrateGenPrompt(p && p.personaGen, DEFAULT_PROMPTS.personaGen, '[Task: Generate/Refine User Profile]'),
-            curator: (p && p.curator) ? p.curator : DEFAULT_PROMPTS.curator,
-            initial: (p && p.initial) ? p.initial : FALLBACK_SYSTEM_PROMPT
+            personaGen: migratePrompt(p && p.personaGen, DEFAULT_PROMPTS.personaGen, OLD_DEFAULT_SIGS.personaGen),
+            curator: migratePrompt(p && p.curator, DEFAULT_PROMPTS.curator, OLD_DEFAULT_SIGS.curator),
+            initial: migratePrompt(p && p.initial, FALLBACK_SYSTEM_PROMPT, OLD_DEFAULT_SIGS.initial)
         };
     } catch { 
         store.promptsCache = { 

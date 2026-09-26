@@ -1,6 +1,8 @@
 // 默认提示词与模版的单一事实源（纯数据模块，无依赖）。
 // 注册表键与 store.promptsCache 的任务键对应；正文里的占位符由 generation.js 组装替换，
-// 键名与占位符一经发布即持久化契约，禁止改名或改写正文。
+// 占位符键名（{{charInfo}}/{{userRequirements}}/{{user}}/{{greetings}}/{{template}}/{{input}}）
+// 是组装契约，禁止改名。默认正文可以改写，但每次改写必须同步更新 loadData 里的旧默认
+// 迁移签名——存量缓存里存着旧默认全文，不迁移的话用户端永远读到旧版。
 
 export const DEFAULT_TEMPLATES = {
     // 默认 User 模版 (主模版)
@@ -34,8 +36,8 @@ export const DEFAULT_PROMPTS = {
     // 策展 Prompt：只产出 schema 结构（键），不填值。世界书经独立 system 消息注入；
     // {{userRequirements}} 由调用方替换，无额外需求时为空串。
     curator:
-`[TASK: CURATE_PROFILE_SCHEMA]
-[CONTEXT: You are designing a YAML profile schema (keys only, values empty) for the reader's own character (the User Avatar) in this simulation world. The profile will be read ALONGSIDE the World Setting database provided in this conversation — readers always see both documents together.]
+`[任务：策展人设 schema]
+[背景：你要为读者本人的角色（User 自设）设计一份 YAML 人设 schema（只定键名，值为空）。这份人设将与本对话提供的《世界设定》一同被阅读——读者始终同时看到这两份文档。]
 
 <source_materials>
 {{charInfo}}
@@ -43,25 +45,25 @@ export const DEFAULT_PROMPTS = {
 
 {{userRequirements}}
 
-[PRINCIPLES — apply in order]:
-1. COMPLEMENT, NEVER DUPLICATE: The World Setting is already known to the reader. FORBID any field whose content would merely restate what the World Setting already states (world rules, lore, geography, factions, other characters' backgrounds). A field is allowed only if it captures something SPECIFIC TO THIS CHARACTER that the World Setting does not provide.
-2. WORLD-FLAVORED KEYS: Where the world defines mechanics relevant to this character (e.g. cultivation realms, second gender, cybernetics), add keys in that world's vocabulary — one key per mechanic that matters for roleplay, no more.
-3. SCALE TO THE SOURCE: World Settings vary widely. Some provide rich, specific hooks for this character's place in the world; others are broad lore with little personal connection. Match the schema's breadth to what the setting actually gives: rich hooks → a fuller schema; broad or thin → stay lean and identity-focused (who they are, how they present, what they carry into the world). Never pad with fields the setting cannot inform.
-4. LEAN BY DEFAULT: Start from the base blocks below and ADD only what this world and the user's requirements justify. Fewer, sharper fields beat exhaustive forms. Never exceed 10 top-level blocks.
-5. PROTAGONIST FOCUS: This is the reader's own character — identity, personality, appearance, and their connection to this world matter most; social blocks stay light.
+[原则——按顺序适用]：
+1. 补充而非重复：《世界设定》读者已经知道。禁止添加任何其内容只会复述世界设定已有信息的字段（世界规则、传说、地理、阵营、其他角色的背景）。仅当字段捕捉到该角色特有、且世界设定未提供的信息时才允许。
+2. 世界风味键名：当世界定义了与该角色相关的机制（如境界、第二性别、义体改造），用该世界的词汇添加键名——每个对扮演重要的机制一个键，不多加。
+3. 规模随素材：世界设定差异很大。有的为该角色在世界中的位置提供了丰富、具体的钩子；有的只有宽泛传说、与个人关联很少。schema 的广度要匹配设定实际给予的：钩子丰富 → schema 更充实；宽泛或单薄 → 保持精简、聚焦身份（他是谁、如何呈现、带着什么进入这个世界）。绝不用设定无法支撑的字段凑数。
+4. 默认精简：从下方基础块出发，只添加这个世界和用户需求能支撑的块。少而锐利的字段胜过面面俱到的表格。顶层块不得超过 10 个。
+5. 主角聚焦：这是读者自己的角色——身份、性格、外貌、以及与这个世界的关联最重要；社交类块保持轻量。
 
 <base_blocks>
 基本信息 / 外貌 / 性格 / 背景 / 喜恶 / NSFW
 </base_blocks>
 
-[Constraint]: YAML keys only, values empty, Simplified Chinese keys. No explanations. Output a single \`\`\`yaml block.
+[约束]：只输出 YAML 键名，值为空，键名用简体中文。无任何解释。输出单个 \`\`\`yaml 代码块。
 
-[Action]:
-Output the curated YAML schema now.`,
+[行动]：
+现在输出策展好的 YAML schema。`,
     // User 人设生成/润色 Prompt
     personaGen:
-`[Task: Generate/Refine User Profile]
-[Target Entity: "{{user}}"]
+`[任务：生成/润色用户人设]
+[目标对象："{{user}}"]
 
 <source_materials>
 {{charInfo}}
@@ -72,28 +74,28 @@ Output the curated YAML schema now.`,
 {{template}}
 </target_schema>
 
-{{input}} 
+{{input}}
 
-[Requirements]:
-1. Follow the YAML schema exactly. Output every leaf field defined in the schema.
-2. COMPLEMENT, DON'T RESTATE — The World Setting database is displayed alongside this profile. NEVER copy or paraphrase world lore into field values. When a field relates to an established world fact, answer with THIS character's specific take in one short phrase (e.g. this character's particular 灵根, not what 灵根 means in this world).
-3. CONCISE VALUES — Each leaf value is one short phrase or sentence (≤20 Chinese characters), unless the block is explicitly narrative (e.g. 背景故事). No filler, no padding, no restating the field name.
-4. SPECIFIC OVER GENERIC — Prefer bold, concrete, playable details (a named habit, a visible tell, a stated preference) over safe abstract traits.
-5. MANDATORY COMPLETENESS — NEVER leave any field blank. You MUST fill EVERY leaf field with a concrete, non-empty value. Do NOT output empty strings, null, "-", or lazy placeholders such as a bare "未知", "unknown", "N/A", "待定", "TBD", "暂无". If a field cannot be directly determined from source materials or the user's request, generate the most reasonable value consistent with the persona, context, and worldview — but do NOT contradict existing evidence.
-6. LIFECYCLE / TIMELINE EXCEPTION — A leaf field MAY contain a narrative-meaningful placeholder ONLY when its content corresponds to a life stage, age bracket, or canonical event the character has NOT YET reached or experienced (e.g. a 24-year-old's "中年_35至今" / "老年" stage; an unborn descendant; a future plot beat that has not happened in the established narrative). In such cases, write a clear, contextual placeholder that EXPLICITLY states the reason, such as 「尚未发生（角色现年X岁，未达此阶段）」, 「未到该阶段」, or 「剧情尚未触及」. This applies generically to ANY template's time-locked / future-locked fields, including custom user templates. The reason MUST be contextual — bare "未知" / "N/A" / "TBD" without explanation is still forbidden.
-7. REFINE / PATCH MODE — If a Target Buffer (existing profile) is provided in the input, treat it as the baseline. PRESERVE every field not explicitly affected by the user's patch instruction. Do NOT clear, blank, shorten, or replace untouched fields with placeholders. Only modify the fields targeted by the patch (and any directly implied by it). Any field that was previously blank MUST now be filled (subject to rules 5 and 6).
+[要求]：
+1. 严格遵循 YAML schema，输出 schema 定义的每一个叶子字段。
+2. 补充而非复述——《世界设定》与人设同时展示。绝不把世界设定内容复制或改写进字段值。当字段涉及既有世界事实时，用该角色对此的具体情况作答（如：此人特有的灵根，而非这个世界里灵根是什么）。
+3. 值要精炼——每个叶子值是一句短语或短句（≤20 个汉字），除非该块明确是叙事性的（如背景故事）。不灌水、不凑字、不复述字段名。
+4. 具体优于泛泛——优先大胆、具体、可玩的细节（一个有名字的习惯、一个可见的小动作、一个明确的偏好），不用安全的抽象特质。
+5. 强制完整——绝不留空。每个叶子字段都必须填入具体、非空的值。不得输出空串、null、"-"，也不得输出「未知」「unknown」「N/A」「待定」「TBD」「暂无」之类的偷懒占位。若素材或用户请求无法直接确定某字段，生成与人设、上下文、世界观最相符的合理值——但不得与既有证据矛盾。
+6. 生命周期/时间线例外——仅当字段内容对应角色尚未到达或经历的人生阶段、年龄段或既定事件时（如 24 岁角色的「中年_35至今」「老年」阶段；未出生的后代；既定剧情中尚未发生的情节），叶子字段才可包含有叙事意义的占位。此时必须写出明确说明原因的上下文占位，如「尚未发生（角色现年X岁，未达此阶段）」「未到该阶段」「剧情尚未触及」。此规则通用适用于任何模板的时间锁/未来锁字段，包括自定义模板。原因必须具体——不带解释的裸「未知」「N/A」「TBD」仍然禁止。
+7. 润色/修补模式——若输入中提供了既有目标暂存（Target Buffer），将其视为基线。完整保留未被用户修补指令明确触及的字段，不得清空、留白、缩短或用占位符替换未触及字段。只修改修补指令指向的字段（及其直接牵连的字段）。此前空白的字段现在必须填上（遵循规则 5、6）。
 
-[Constraint]: Do NOT include any "Little Theater", "Small Theater", scene descriptions, internal monologues, or CoT status bars. STRICTLY YAML DATA ONLY. Every leaf key in the schema MUST have a non-empty value (a properly-explained timeline placeholder counts as non-empty per rule 6). Before finishing, silently re-check the output and fill in any field that is still blank. Values stay concise per rule 3; no value may restate World Setting content.
+[约束]：不得包含任何「小剧场」、场景描写、内心独白或 CoT 状态栏。严格只输出 YAML 数据。schema 中每个叶子键都必须有非空值（按规则 6 带完整解释的时间线占位视为非空）。完成前默默自查，把仍然空着的字段补齐。值保持规则 3 的精炼；任何值不得复述世界设定内容。
 
-[Action]:
-Output ONLY the YAML data matching the schema, with every field populated.`
+[行动]：
+只输出符合 schema 的 YAML 数据，每个字段都已填好。`
 };
 
 export const FALLBACK_SYSTEM_PROMPT =
-`[TASK: DATABASE_RECOVERY_OPERATION]
-[TARGET: Entity Profile]
-[CONTEXT: The narrative simulation requires a fully detailed profile to maintain logic continuity.]
-1. Analyze the Source Material.
-2. Complete the Target Schema.
-3. Do not summarize. Do not filter. Fill EVERY field.
-4. Maintain the exact YAML structure.`;
+`[任务：资料恢复操作]
+[目标：角色人设]
+[背景：叙事模拟需要一份完整详细的人设以维持逻辑连续性。]
+1. 分析素材。
+2. 补全目标 schema。
+3. 不要总结，不要过滤，填满每一个字段。
+4. 保持 YAML 结构完全不变。`;
