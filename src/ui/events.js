@@ -6,6 +6,7 @@ import { getActivePersonaDescription, getUserDisplayName } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
 import { upsertPersona, syncPersonaToWorldInfo, getAllWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
+import { fetchModels, testConnection, clampTimeout } from "../api.js";
 import { TEXT } from "../strings.js";
 import { log as logInfo, error as logError } from "../log.js";
 import { renderApiProfiles, renderWiBooks } from "./render.js";
@@ -66,7 +67,7 @@ const saveCurrentState = () => {
             currentLc.indepApiKey = $('#pw-api-key').val();
             currentLc.indepApiModel = $('#pw-api-model-select').val();
             const timeoutInput = parseInt($('#pw-indep-timeout').val(), 10);
-            if (timeoutInput > 0) currentLc.indepTimeout = Math.min(1800, Math.max(30, timeoutInput));
+            if (timeoutInput > 0) currentLc.indepTimeout = clampTimeout(timeoutInput);
             const $streamEl = $('#pw-indep-stream');
             if ($streamEl.length) currentLc.indepStream = $streamEl.prop('checked');
             // max_tokens 现在由 resolveMaxTokens() 按模型名自动推断，不再有 UI 可配置
@@ -402,7 +403,7 @@ export function bindEvents() {
                 request: refineReq,
                 currentText: oldText
             });
-            const responseText = await runGeneration(config, config);
+            const responseText = await runGeneration(config);
 
             // 复用提取出来的渲染函数
             renderDiffComparison(oldText, responseText);
@@ -444,7 +445,7 @@ export function bindEvents() {
                 currentText: oldText
             });
             
-            const responseText = await runGeneration(config, config);
+            const responseText = await runGeneration(config);
 
             // 复用渲染函数，原地刷新 Diff 界面
             renderDiffComparison(oldText, responseText);
@@ -495,7 +496,7 @@ export function bindEvents() {
                 request: req || '',
                 currentText: ''
             });
-            const text = await runGeneration(config, config);
+            const text = await runGeneration(config);
             applyGeneratedResult(text);
         } catch (e) { 
             logError(e);
@@ -643,43 +644,12 @@ export function bindEvents() {
 
     $(document).on('click.pw', '#pw-api-fetch', async function (e) {
         e.preventDefault();
-        const url = $('#pw-api-url').val().replace(/\/$/, '');
+        const url = $('#pw-api-url').val();
         const key = $('#pw-api-key').val();
         const $btn = $(this).find('i').addClass('fa-spin');
-        const isAnthropicStyle = url.toLowerCase().includes('anthropic.com') || url.includes('/v1/messages');
         try {
-            let data = null;
-            if (isAnthropicStyle) {
-                let base = url.replace(/\/v1\/messages$/, '').replace(/\/v1$/, '').replace(/\/$/, '');
-                const anthEp = `${base}/v1/models`;
-                try {
-                    const res = await fetch(anthEp, {
-                        method: 'GET',
-                        headers: {
-                            'x-api-key': key,
-                            'anthropic-version': '2023-06-01'
-                        }
-                    });
-                    if (res.ok) data = await res.json();
-                } catch { /* 探测端点失败则落回 OpenAI 兼容探测 */ }
-            }
-            if (!data) {
-                // 规范化：支持 https://x/ , https://x/v1 , https://x/v1/chat/completions 等写法
-                const cleanBase = url.replace(/\/chat\/completions$/, '');
-                const endpoints = [
-                    /\/v\d+$/.test(cleanBase) ? `${cleanBase}/models` : `${cleanBase}/v1/models`,
-                    `${cleanBase}/models`
-                ];
-                for (const ep of endpoints) {
-                    try {
-                        const res = await fetch(ep, { method: 'GET', headers: { 'Authorization': `Bearer ${key}` } });
-                        if (res.ok) { data = await res.json(); break; }
-                    } catch { /* 换下一个候选端点 */ }
-                }
-            }
-            if (!data) throw new Error("连接失败或无法获取模型列表");
-            const rawList = data.data || data;
-            const models = (Array.isArray(rawList) ? rawList : []).map(m => (typeof m === 'string' ? m : m.id)).filter(Boolean).sort();
+            // 协议知识（形态判定/base 归一/候选端点循环）全部在 api.js，UI 只管表单与呈现
+            const models = await fetchModels(url, key);
             const $select = $('#pw-api-model-select').empty();
             models.forEach(m => $select.append(`<option value="${m}">${m}</option>`));
             if (models.length > 0) $select.val(models[0]);
@@ -690,41 +660,15 @@ export function bindEvents() {
 
     $(document).on('click.pw', '#pw-api-test', async function (e) {
         e.preventDefault();
-        const url = $('#pw-api-url').val().replace(/\/$/, '');
+        const url = $('#pw-api-url').val();
         const key = $('#pw-api-key').val();
         const model = $('#pw-api-model-select').val();
         const $btn = $(this);
         const restoreBtn = withButtonSpinner($btn, '<i class="fas fa-spinner fa-spin"></i>');
-        const isAnthropicStyle = url.toLowerCase().includes('anthropic.com') || url.includes('/v1/messages');
         try {
-            if (isAnthropicStyle) {
-                let base = url.replace(/\/v1\/messages$/, '').replace(/\/v1$/, '').replace(/\/$/, '');
-                const ep = `${base}/v1/messages`;
-                const res = await fetch(ep, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': key,
-                        'anthropic-version': '2023-06-01'
-                    },
-                    body: JSON.stringify({
-                        model: model || 'claude-3-5-haiku-20241022',
-                        max_tokens: 16,
-                        messages: [{ role: 'user', content: 'Hi' }]
-                    })
-                });
-                if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
-                else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
-            } else {
-                const cleanBase = url.replace(/\/chat\/completions$/, '');
-                const ep = /\/v\d+$/.test(cleanBase) ? `${cleanBase}/chat/completions` : `${cleanBase}/v1/chat/completions`;
-                const res = await fetch(ep, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-                    body: JSON.stringify({ model: model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 })
-                });
-                if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
-                else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
-            }
+            const res = await testConnection(url, key, model);
+            if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
+            else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
         } catch (e) { toastr.error(TEXT.TOAST_CONN_FAIL); }
         finally { restoreBtn(); }
     });

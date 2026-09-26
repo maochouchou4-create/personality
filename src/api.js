@@ -49,6 +49,95 @@ export function getIndepStreamEnabled() {
     return true;
 }
 
+// 超时输入夹取：30–1800 秒——防 0/废值把请求立刻打挂，也防浏览器挂太久。
+export const clampTimeout = (sec) => Math.min(1800, Math.max(30, sec));
+
+// ============================================================================
+// 端点形态与探测（UI 连测/取模型与请求组装共用的协议知识，唯一事实源）
+// ============================================================================
+
+// 端点形态判定：Anthropic 原生（官方域或 /v1/messages 路径）或 OpenAI 兼容（其余全部——
+// OpenRouter/DeepSeek/中转站/本地 llama.cpp 等一律按 OpenAI 兼容组装）。
+export function detectEndpointStyle(url) {
+    const u = String(url || '');
+    return (u.toLowerCase().includes('anthropic.com') || u.includes('/v1/messages')) ? 'anthropic' : 'openai';
+}
+
+// base 归一：剥尾斜杠与「本形态自己的资源后缀」，返回可直接拼接资源端点的主机根。
+// 分形态剥是刻意的：OpenAI 兼容写法 https://x/v1 必须保留 /v1（拼 /chat/completions 得
+// https://x/v1/chat/completions），一刀切会把 /v1 剥出不同 URL。
+export function normalizeApiBase(url, style) {
+    let base = String(url || '').replace(/\/$/, '');
+    if (style === 'anthropic') {
+        return base.replace(/\/v1\/messages$/, '').replace(/\/v1$/, '');
+    }
+    return base.replace(/\/chat\/completions$/, '');
+}
+
+// 响应体 → 模型名列表（OpenAI / Anthropic 两种信封都兼容）
+const extractModelList = (data) => {
+    const rawList = data.data || data;
+    return (Array.isArray(rawList) ? rawList : []).map(m => (typeof m === 'string' ? m : m.id)).filter(Boolean).sort();
+};
+
+// 拉取模型名单：Anthropic 先探测 /v1/models，失败落回 OpenAI 兼容双候选端点循环。
+// 全部失败抛错（文案与旧实现一致，调用方直接 toast）。
+export async function fetchModels(url, key) {
+    if (detectEndpointStyle(url) === 'anthropic') {
+        const base = normalizeApiBase(url, 'anthropic');
+        try {
+            const res = await fetch(`${base}/v1/models`, {
+                method: 'GET',
+                headers: {
+                    'x-api-key': key,
+                    'anthropic-version': '2023-06-01'
+                }
+            });
+            if (res.ok) return extractModelList(await res.json());
+        } catch { /* 探测端点失败则落回 OpenAI 兼容探测 */ }
+    }
+    // OpenAI 兼容探测：支持 https://x/ , https://x/v1 , https://x/v1/chat/completions 等写法
+    const cleanBase = String(url || '').replace(/\/$/, '').replace(/\/chat\/completions$/, '');
+    const endpoints = [
+        /\/v\d+$/.test(cleanBase) ? `${cleanBase}/models` : `${cleanBase}/v1/models`,
+        `${cleanBase}/models`
+    ];
+    for (const ep of endpoints) {
+        try {
+            const res = await fetch(ep, { method: 'GET', headers: { 'Authorization': `Bearer ${key}` } });
+            if (res.ok) return extractModelList(await res.json());
+        } catch { /* 换下一个候选端点 */ }
+    }
+    throw new Error("连接失败或无法获取模型列表");
+}
+
+// 连通性测试：发一次最小请求，原样返回 fetch 响应（ok 判定与 toast 归调用方）。
+// 无超时控制——与本来的行为一致（浏览器默认超时兜底）。
+export async function testConnection(url, key, model) {
+    if (detectEndpointStyle(url) === 'anthropic') {
+        const base = normalizeApiBase(url, 'anthropic');
+        return await fetch(`${base}/v1/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': key,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: model || 'claude-3-5-haiku-20241022',
+                max_tokens: 16,
+                messages: [{ role: 'user', content: 'Hi' }]
+            })
+        });
+    }
+    const cleanBase = String(url || '').replace(/\/$/, '').replace(/\/chat\/completions$/, '');
+    const ep = /\/v\d+$/.test(cleanBase) ? `${cleanBase}/chat/completions` : `${cleanBase}/v1/chat/completions`;
+    return await fetch(ep, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify({ model: model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 })
+    });
+}
+
 // 根据模型名自动推断合理的 max_tokens，无需用户配置。
 // 返回 0 表示"不发送 max_tokens 字段"，仅 OpenAI 兼容分支可用；Anthropic 必填故永远不返回 0。
 export function resolveMaxTokens(modelName, isAnthropic) {

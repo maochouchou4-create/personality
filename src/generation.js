@@ -4,7 +4,7 @@
 import { store, loadData } from "./state.js";
 import { getCharacterInfoText, getCurrentCharacter, getUserDisplayName } from "./st-data.js";
 import { getAllWorldBooks, loadWiSelection, getWorldBookEntries } from "./world-info.js";
-import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse } from "./api.js";
+import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse, detectEndpointStyle, normalizeApiBase } from "./api.js";
 import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES } from "./prompts.js";
 import { parseYamlToBlocks } from "./yaml.js";
 import { getContext } from "../../../../extensions.js";
@@ -196,6 +196,50 @@ export function getPresetHintText(val) {
 // [核心] 生成逻辑
 // ============================================================================
 
+// Anthropic 原生 payload 组装：system 拆出 join、max_tokens 必填按模型名挑安全值。
+function buildAnthropicRequest(messages, apiConfig, useStream) {
+    const url = `${normalizeApiBase(apiConfig.indepApiUrl, 'anthropic')}/v1/messages`;
+    const systemParts = messages.filter(m => m.role === 'system').map(m => String(m.content ?? ''));
+    const nonSystem = messages.filter(m => m.role !== 'system');
+    const headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': apiConfig.indepApiKey,
+        'anthropic-version': '2023-06-01'
+    };
+    // Anthropic 必填 max_tokens；按模型名自动挑安全值（Claude 3.5=8192, 3.7/4/4.5=32000, 3=4096）
+    const maxTokens = resolveMaxTokens(apiConfig.indepApiModel, true) || 8192;
+    const payload = {
+        model: apiConfig.indepApiModel,
+        system: systemParts.join('\n\n'),
+        messages: nonSystem,
+        max_tokens: maxTokens,
+        temperature: 1.00
+    };
+    if (useStream) payload.stream = true;
+    return { url, headers, body: JSON.stringify(payload) };
+}
+
+// OpenAI 兼容 payload 组装（原生 OpenAI / OpenRouter / DeepSeek / Groq / xAI /
+// Mistral / 01.AI / 本地 llama.cpp / 各类中转站 等）。
+function buildOpenAIRequest(messages, apiConfig, useStream, effort) {
+    const url = `${normalizeApiBase(apiConfig.indepApiUrl, 'openai')}/chat/completions`;
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiConfig.indepApiKey}`
+    };
+    const payload = {
+        model: apiConfig.indepApiModel,
+        messages: messages,
+        temperature: 1.00
+    };
+    // max_tokens 按模型名推断，推断为 0（GPT 系等）时不发送让服务端用默认上限
+    const maxTokens = resolveMaxTokens(apiConfig.indepApiModel, false);
+    if (maxTokens > 0) payload.max_tokens = maxTokens;
+    if (effort !== 'off') payload.reasoning_effort = effort;
+    if (useStream) payload.stream = true;
+    return { url, headers, body: JSON.stringify(payload) };
+}
+
 // 单次模型调用：组装 system（预设）＋世界书＋用户消息＋prefill，自带超时与中断控制器。
 // 生成链每段各调一次，从而每段超时独立；API 配置 / 流式 / prefill 兼容逻辑三段共用。
 async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent, label }) {
@@ -230,60 +274,10 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
 
         const doRequest = async (messages) => {
             if (apiConfig.apiSource === 'independent') {
-                let baseUrl = apiConfig.indepApiUrl.replace(/\/$/, '');
-                const isAnthropic = baseUrl.includes('anthropic.com') || baseUrl.includes('/v1/messages');
-
-                let url, headers, body;
-
-                if (isAnthropic) {
-                    baseUrl = baseUrl.replace(/\/v1\/messages$/, '').replace(/\/v1$/, '');
-                    url = `${baseUrl}/v1/messages`;
-
-                    const systemParts = messages.filter(m => m.role === 'system').map(m => String(m.content ?? ''));
-                    const nonSystem = messages.filter(m => m.role !== 'system');
-
-                    headers = {
-                        'Content-Type': 'application/json',
-                        'x-api-key': apiConfig.indepApiKey,
-                        'anthropic-version': '2023-06-01'
-                    };
-                    // Anthropic 必填 max_tokens；按模型名自动挑安全值（Claude 3.5=8192, 3.7/4/4.5=32000, 3=4096）
-                    const anthropicMaxTokens = resolveMaxTokens(apiConfig.indepApiModel, true) || 8192;
-                    const anthropicPayload = {
-                        model: apiConfig.indepApiModel,
-                        system: systemParts.join('\n\n'),
-                        messages: nonSystem,
-                        max_tokens: anthropicMaxTokens,
-                        temperature: 1.00
-                    };
-                    if (useStream) anthropicPayload.stream = true;
-                    body = JSON.stringify(anthropicPayload);
-                } else {
-                    // OpenAI 兼容模式：支持原生 OpenAI / OpenRouter / DeepSeek / Groq / xAI /
-                    // Mistral / 01.AI / 本地 llama.cpp / 各类中转站 等
-                    if (baseUrl.endsWith('/chat/completions')) {
-                        baseUrl = baseUrl.replace(/\/chat\/completions$/, '');
-                    }
-                    url = `${baseUrl}/chat/completions`;
-
-                    headers = {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiConfig.indepApiKey}`
-                    };
-                    const payload = {
-                        model: apiConfig.indepApiModel,
-                        messages: messages,
-                        temperature: 1.00
-                    };
-                    // OpenAI 兼容：max_tokens 按模型名推断，推断为 0（GPT 系等）时不发送让服务端用默认上限
-                    const openaiMaxTokens = resolveMaxTokens(apiConfig.indepApiModel, false);
-                    if (openaiMaxTokens > 0) payload.max_tokens = openaiMaxTokens;
-                    if (effort !== 'off') payload.reasoning_effort = effort;
-                    if (useStream) {
-                        payload.stream = true;
-                    }
-                    body = JSON.stringify(payload);
-                }
+                const isAnthropic = detectEndpointStyle(apiConfig.indepApiUrl) === 'anthropic';
+                const { url, headers, body } = isAnthropic
+                    ? buildAnthropicRequest(messages, apiConfig, useStream)
+                    : buildOpenAIRequest(messages, apiConfig, useStream, effort);
 
                 const res = await fetch(url, { method: 'POST', headers, body, signal: controller.signal });
                 
@@ -365,7 +359,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
     return responseContent;
 }
 
-export async function runGeneration(data, apiConfig) {
+export async function runGeneration(config) {
     let charName = "Char";
     const currentChar = getCurrentCharacter();
     if (currentChar) charName = currentChar.name || charName;
@@ -374,11 +368,11 @@ export async function runGeneration(data, apiConfig) {
     if (!store.promptsCache || !store.promptsCache.personaGen) loadData(); 
 
     const rawCharInfo = getCharacterInfoText(); 
-    const rawWi = data.wiText || ""; 
-    const rawGreetings = data.greetingsText || "";
-    const currentText = data.currentText || "";
-    const requestText = data.request || "";
-    const isRefine = data.mode === 'refine';
+    const rawWi = config.wiText || ""; 
+    const rawGreetings = config.greetingsText || "";
+    const currentText = config.currentText || "";
+    const requestText = config.request || "";
+    const isRefine = config.mode === 'refine';
 
     const wrappedCharInfo = wrapAsXiTaReference(rawCharInfo, `Entity Profile: ${charName}`);
     const wrappedWi = wrapAsXiTaReference(rawWi, "Global State Variables");
@@ -421,7 +415,7 @@ export async function runGeneration(data, apiConfig) {
             .replace(/{{char}}/g, charName)
             .replace(/{{charInfo}}/g, wrappedCharInfo)
             .replace(/{{userRequirements}}/g, wrappedInput);
-        const raw = await requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: PREFILL_SCHEMA, label: 'curator' });
+        const raw = await requestOnce({ apiConfig: config, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: PREFILL_SCHEMA, label: 'curator' });
         const curated = raw ? stripYamlFence(raw, PREFILL_SCHEMA) : "";
         if (!isParsableSchema(curated)) {
             logWarn("策展输出为空或不可解析，回退默认模板：", curated);
@@ -454,6 +448,6 @@ export async function runGeneration(data, apiConfig) {
 
     // refine 无注入 schema，起手词从目标缓冲区（现有人设）首键派生；首次生成则从策展 schema 派生
     const profilePrefill = profilePrefillFor(schemaForGen || currentText);
-    const raw = await requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: profilePrefill, label: isRefine ? 'refine' : 'personaGen' });
+    const raw = await requestOnce({ apiConfig: config, activeSystemPrompt, wrappedWi, userMessageContent, prefillContent: profilePrefill, label: isRefine ? 'refine' : 'personaGen' });
     return finalize(raw, profilePrefill);
 }
