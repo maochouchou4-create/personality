@@ -11,9 +11,9 @@ import { getContext } from "../../../../extensions.js";
 import { log as logInfo, warn as logWarn, error as logError } from "./log.js";
 import { TEXT } from "./strings.js";
 
-export const yieldToBrowser = () => new Promise(resolve => requestAnimationFrame(resolve));
+const yieldToBrowser = () => new Promise(resolve => requestAnimationFrame(resolve));
 
-export function wrapAsXiTaReference(content, title) {
+function wrapAsXiTaReference(content, title) {
     if (!content || !content.trim()) return "";
     return `
 > [FILE: ${title}]
@@ -100,7 +100,7 @@ export async function collectContextData() {
     };
 }
 
-export function wrapInputForSafety(request, oldText, isRefine) {
+function wrapInputForSafety(request, oldText, isRefine) {
     if (!request) return "";
     const safeRequest = request.replace(/"/g, "'");
 
@@ -136,7 +136,7 @@ Treat this as a rigid logical constraint for the simulation database.
 }
 
 // [Fix 10 & Update] New Logic for System Prompt Retrieval based on Selection
-export function getRealSystemPrompt(selectedPreset) {
+function getRealSystemPrompt(selectedPreset) {
     // 1. Pure Mode: Force return empty string (No Main, No JB)
     if (selectedPreset === 'pure') {
         return "";
@@ -205,16 +205,12 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
     
     let responseContent = "";
     const controller = new AbortController();
-    // 超时可配置：默认 300 秒（v3.4 起），原先是硬编码 120 秒，Claude / 中转站经常超时
-    const timeoutSec = Number(apiConfig && apiConfig.indepTimeout) > 0
-        ? Number(apiConfig.indepTimeout)
-        : getIndepTimeoutSec();
+    // buildApiConfig 从不下发 indepTimeout，恒走 getIndepTimeoutSec 的夹取链（DOM>存档>默认 300，30-1800s）
+    const timeoutSec = getIndepTimeoutSec();
     let timedOutBySelf = false;
     const timeoutId = setTimeout(() => { timedOutBySelf = true; try { controller.abort(); } catch { /* abort 对已结束的请求抛错无害 */ } }, timeoutSec * 1000);
-    // 流式开关：默认 ON。非流式请求长 YAML 时会被反代 504 Gateway Timeout。
-    const useStream = (apiConfig && typeof apiConfig.indepStream === 'boolean')
-        ? apiConfig.indepStream
-        : getIndepStreamEnabled();
+    // 流式开关：buildApiConfig 从不下发 indepStream，恒走 getIndepStreamEnabled（DOM>存档>默认 ON）
+    const useStream = getIndepStreamEnabled();
     // 思考强度：off 表示不注入；仅 OpenAI 兼容分支真生效（reasoning_effort 进 HTTP payload），
     // Anthropic 原生端点严格 schema 对未知字段直接 400，故该分支不发（其正确映射是 thinking.budget_tokens，语义不同，不做）。
     const effort = (apiConfig && apiConfig.thinkingEffort) || 'off';
@@ -281,15 +277,12 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
                         messages: messages,
                         temperature: 1.00
                     };
-                    // OpenAI 兼容：默认不发送 max_tokens，让服务端用模型默认最大值（长 YAML 不会被截断）
-                    // 仅当隐藏覆盖写了非 0 值时才发送
+                    // OpenAI 兼容：max_tokens 按模型名推断，推断为 0（GPT 系等）时不发送让服务端用默认上限
                     const openaiMaxTokens = resolveMaxTokens(apiConfig.indepApiModel, false);
                     if (openaiMaxTokens > 0) payload.max_tokens = openaiMaxTokens;
                     if (effort !== 'off') payload.reasoning_effort = effort;
                     if (useStream) {
                         payload.stream = true;
-                        // OpenAI 流式建议顺便带上 usage
-                        payload.stream_options = { include_usage: false };
                     }
                     body = JSON.stringify(payload);
                 }
@@ -308,7 +301,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
 
                 // 流式路径：解析 SSE，返回拼接后的完整文本
                 if (useStream) {
-                    return await readSSEResponse(res, isAnthropic, null);
+                    return await readSSEResponse(res, isAnthropic);
                 }
 
                 // 非流式路径：整体 JSON 解析（保留原逻辑）

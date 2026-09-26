@@ -13,6 +13,10 @@ import { openCreatorPopup } from "./panel.js";
 
 const BUTTON_ID = 'pw_persona_tool_btn';
 
+// 生成/润色互斥与润色记忆是本模块私有运行态（历史误挂 store，无跨模块消费方）
+let isProcessing = false;
+let lastRefineRequest = "";
+
 const forcePaint = () => new Promise(resolve => setTimeout(resolve, 50));
 
 // 生成 / 润色 / 重 Roll 三处共用的请求配置构造（单一事实源，避免三份字段集各写一遍后漂移）。
@@ -61,7 +65,7 @@ export function bindEvents() {
             name: newName,
             url: $('#pw-api-url').val(),
             key: $('#pw-api-key').val(),
-            model: $('#pw-api-model-select').val() || $('#pw-api-model').val() || ''
+            model: $('#pw-api-model-select').val() || ''
         });
         lc.activeApiProfileId = newId;
         savedState.localConfig = lc;
@@ -249,7 +253,7 @@ export function bindEvents() {
                 currentLc.apiSource = $('#pw-api-source').val();
                 currentLc.indepApiUrl = $('#pw-api-url').val();
                 currentLc.indepApiKey = $('#pw-api-key').val();
-                currentLc.indepApiModel = $('#pw-api-model-select').val() || $('#pw-api-model').val();
+                currentLc.indepApiModel = $('#pw-api-model-select').val();
                 const timeoutInput = parseInt($('#pw-indep-timeout').val(), 10);
                 if (timeoutInput > 0) currentLc.indepTimeout = Math.min(1800, Math.max(30, timeoutInput));
                 const $streamEl = $('#pw-indep-stream');
@@ -352,17 +356,17 @@ export function bindEvents() {
    // ================== 1. 润色按钮逻辑 (主界面) ==================
     $(document).on('click.pw', '#pw-btn-refine', async function (e) {
         e.preventDefault();
-        if (store.isProcessing) return;
-        store.isProcessing = true;
+        if (isProcessing) return;
+        isProcessing = true;
 
         const refineReq = $('#pw-refine-input').val();
         if (!refineReq) {
             toastr.warning(TEXT.TOAST_REFINE_EMPTY);
-            store.isProcessing = false;
+            isProcessing = false;
             return;
         }
         
-        store.lastRefineRequest = refineReq;
+        lastRefineRequest = refineReq;
 
         if(!store.promptsCache.personaGen) loadData();
 
@@ -392,20 +396,20 @@ export function bindEvents() {
             toastr.error(TEXT.TOAST_REFINE_FAIL(e.message)); 
         } finally { 
             $btn.removeClass('fa-spinner fa-spin').addClass('fa-magic');
-            store.isProcessing = false;
+            isProcessing = false;
         }
     });
 
     // ================== 2. 重 Roll 按钮逻辑 (Diff界面内) ==================
     $(document).on('click.pw', '#pw-diff-reroll', async function (e) {
         e.preventDefault();
-        if (store.isProcessing) return;
-        if (!store.lastRefineRequest) {
+        if (isProcessing) return;
+        if (!lastRefineRequest) {
             toastr.warning(TEXT.TOAST_NO_LAST_REQUEST);
             return;
         }
 
-        store.isProcessing = true;
+        isProcessing = true;
         const $btn = $(this);
         const originalHtml = $btn.html();
         $btn.html('<i class="fa-solid fa-spinner fa-spin"></i> 生成中...');
@@ -417,7 +421,7 @@ export function bindEvents() {
             const contextData = await collectContextData();
             const config = buildApiConfig(contextData, {
                 mode: 'refine',
-                request: store.lastRefineRequest,
+                request: lastRefineRequest,
                 currentText: oldText
             });
             
@@ -433,7 +437,7 @@ export function bindEvents() {
             toastr.error(TEXT.TOAST_REROLL_FAIL(e.message));
         } finally {
             $btn.html(originalHtml);
-            store.isProcessing = false;
+            isProcessing = false;
         }
     });
 
@@ -451,8 +455,8 @@ export function bindEvents() {
     $(document).on('click.pw', '#pw-btn-gen', async function (e) {
         e.preventDefault();
         
-        if (store.isProcessing) return;
-        store.isProcessing = true;
+        if (isProcessing) return;
+        isProcessing = true;
 
         // 需求已改为可选（额外需求）：空需求＝纯全自动链，由 curator 按世界书自行策展
         const req = $('#pw-request').val();
@@ -482,7 +486,7 @@ export function bindEvents() {
             toastr.error(e.message); 
         } finally { 
             $btn.prop('disabled', false).html('<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 User 设定');
-            store.isProcessing = false;
+            isProcessing = false;
         }
     });
 

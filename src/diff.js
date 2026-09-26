@@ -6,7 +6,7 @@ import { TEXT } from "./strings.js";
 // ============================================================================
 // 新增：独立的 Diff 渲染函数 (供润色和重Roll复用)
 // ============================================================================
-export function _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 export function computeDiffBlocks(oldText, newText) {
     const tokenize = (text) => {
@@ -74,7 +74,7 @@ export function renderDiffComparison(oldText, newText) {
     $('#pw-diff-hint').show();
 }
 
-export function renderInlineDiff() {
+function renderInlineDiff() {
     let html = '';
     store.currentDiffBlocks.forEach((block, index) => {
         if (block.type === 'equal') {

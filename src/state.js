@@ -26,11 +26,9 @@ export const store = {
         curator: DEFAULT_PROMPTS.curator
     },
     availableWorldBooks: [],
-    isProcessing: false,
     currentGreetingsList: [],
     wiSelectionCache: {},
     uiStateCache: { generationPreset: 'current' },
-    lastRefineRequest: "",
     userContext: defaultUserContext(),
     currentDiffBlocks: [],
 };

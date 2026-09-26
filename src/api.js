@@ -3,7 +3,6 @@
 import { loadState } from "./state.js";
 
 export const defaultSettings = {
-    autoSwitchPersona: true, syncToWorldInfo: false,
     apiSource: 'main',
     indepApiUrl: 'https://api.openai.com/v1', indepApiKey: '', indepApiModel: 'gpt-3.5-turbo',
     // 独立 API 请求超时（秒）。Claude / 第三方中转站输出长 YAML 经常 >2min，默认给 5 min。
@@ -51,20 +50,8 @@ export function getIndepStreamEnabled() {
 }
 
 // 根据模型名自动推断合理的 max_tokens，无需用户配置。
-// 若用户想强制覆盖，仍保留隐藏入口：手动在 DevTools 给 localStorage 的
-// pw_state_* → localConfig.indepMaxTokensOverride 写一个正整数即可。
-// （特地换了 key，避免 v3.4.3 残留的 indepMaxTokens=32000 把 Claude 3.5 打成 400）
 // 返回 0 表示"不发送 max_tokens 字段"，仅 OpenAI 兼容分支可用；Anthropic 必填故永远不返回 0。
 export function resolveMaxTokens(modelName, isAnthropic) {
-    // 1) 隐藏的手动覆盖（仅极端场景使用）
-    try {
-        const saved = loadState();
-        if (saved && saved.localConfig && Number.isInteger(saved.localConfig.indepMaxTokensOverride)) {
-            const v = saved.localConfig.indepMaxTokensOverride;
-            if (v >= 0 && v <= 200000) return v;
-        }
-    } catch { /* 覆盖值不可读时按模型名推断 */ }
-
     const m = String(modelName || '').toLowerCase();
 
     if (isAnthropic) {
@@ -90,8 +77,7 @@ export function resolveMaxTokens(modelName, isAnthropic) {
 //   - OpenAI 兼容：`data: {"choices":[{"delta":{"content":"..."}}]}` / `data: [DONE]`
 //   - Anthropic  ：`event: content_block_delta` + `data: {"delta":{"type":"text_delta","text":"..."}}`
 //   - 忽略 ping / 心跳 / 空 event，对不完整 JSON 静默跳过
-// 每收到 chunk 就回调 onDelta(text) 供 UI 渐进显示（目前 Persona Weaver 不用，留做扩展）。
-export async function readSSEResponse(res, isAnthropic, onDelta) {
+export async function readSSEResponse(res, isAnthropic) {
     if (!res.body || !res.body.getReader) {
         const text = await res.text();
         throw new Error("当前浏览器不支持 Fetch 流式读取，无法解析流式响应。请关闭『流式输出』再试。原始返回前 200 字: " + text.slice(0, 200));
@@ -154,7 +140,6 @@ export async function readSSEResponse(res, isAnthropic, onDelta) {
             if (piece) {
                 fullText += piece;
                 sawAnyDelta = true;
-                if (typeof onDelta === 'function') { try { onDelta(piece); } catch { /* 回调失败不得中断流式收集 */ } }
             }
         }
     };

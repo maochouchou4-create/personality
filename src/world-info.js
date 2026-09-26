@@ -24,7 +24,7 @@ export function getPosAbbr(pos) {
     return ({ 0: 'PreChar', 1: 'PostChar', 2: 'PreAN', 3: 'PostAN', 4: '@Depth', 5: 'PreEx', 6: 'PostEx' })[pos] ?? '?';
 }
 
-export function getWiCacheKey() {
+function getWiCacheKey() {
     const context = getContext();
     return context.characterId || 'global_no_char'; 
 }
@@ -97,7 +97,7 @@ async function createAvatarPersona(displayName, description) {
 
 // 清理 personas 里指向不存在头像文件的假键（旧版插件写入的脏数据；纯内存删除＋存盘，
 // 禁止对这些 id 调 /persona-delete——后端对不存在文件 404）。
-export async function cleanGhostPersonaKeys() {
+async function cleanGhostPersonaKeys() {
     try {
         const files = new Set(await getUserAvatars(false));
         if (files.size === 0) return; // 磁盘快照为空的异常态，宁漏勿误删
@@ -188,9 +188,9 @@ export async function loadAvailableWorldBooks() {
     store.availableWorldBooks = [...new Set(store.availableWorldBooks)].filter(x => x).sort();
 }
 
-export async function getContextWorldBooks(extras = []) {
+export async function getContextWorldBooks() {
     const context = getContext();
-    const books = new Set(extras);
+    const books = new Set();
     const charId = context.characterId;
     if (charId !== undefined && context.characters[charId]) {
         const char = context.characters[charId];
