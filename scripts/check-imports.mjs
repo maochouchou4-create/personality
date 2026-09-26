@@ -5,7 +5,10 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 
-const EXTERNAL = /\/(\.\.\/)+(scripts\/)?(extensions|script|utils|personas|power-user|world-info)\.js$/;
+// 宿主模块（extensions/script 在宿主根、其余在宿主 scripts/ 目录）只在酒馆运行时存在。
+// 注意不带 scripts/ 段：src 的 4/5 段上溯已落在宿主 scripts/ 目录内，多写一段＝
+// scripts/scripts/ 双段解析必炸（可选段正则会把坏形态一并放行，三道门同此教训）。
+const EXTERNAL = /\/(\.\.\/)+(extensions|script|utils|personas|power-user|world-info)\.js$/;
 const IMPORT_RE = /import\s+(?:([^'"]*?)\s*from\s*)?['"](\.[^'"]*)['"]/g;
 const NAMED_RE = /\{([^}]*)\}/;
 

@@ -5,7 +5,7 @@ import { store, loadData, loadState, saveState } from "../state.js";
 import { DEFAULT_TEMPLATES } from "../prompts.js";
 import { defaultSettings } from "../api.js";
 import { getPresetHintText } from "../generation.js";
-import { loadAvailableWorldBooks, cleanGhostPersonaKeys } from "../world-info.js";
+import { loadAvailableWorldBooks } from "../world-info.js";
 import { power_user } from "../../../../../power-user.js";
 import { user_avatar } from "../../../../../personas.js";
 import { TEXT } from "../strings.js";
@@ -316,8 +316,6 @@ export async function openCreatorPopup() {
     </div>
 </div>
 `;
-
-    cleanGhostPersonaKeys(); // 不 await：清理失败不阻断面板打开
 
     callPopup(html, 'text', '', { wide: true, large: true, okButton: "Close" });
 

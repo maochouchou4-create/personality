@@ -49,16 +49,20 @@ export function saveWiSelection(bookName, uids) {
 // 头像文件不存在即报「no longer exists」，故新人设必须先经 /api/avatars/upload 落 PNG。
 // persona_selected 字段在 TT 不存在，选中态走 setUserAvatar（user_avatar）。
 export async function upsertPersona(displayName, description) {
+    // 先清假键再查重：旧版插件写入的幽灵键若仍在内存，findPersona 会命中它并走
+    // 「更新已存在」分支——该分支对无头像文件的 id 必然保存失败
+    await cleanGhostPersonaKeys();
     const existing = findPersona({ name: displayName, allowAvatar: false, preferCurrentPersona: false });
     const avatarId = existing?.avatar ?? await createAvatarPersona(displayName, description);
 
     if (existing) {
-        power_user.personas[avatarId] = displayName;
-        const descriptor = power_user.persona_descriptions[avatarId] ??= {};
+        // 按名查到的人设名字本就一致，此处不写 name（半截改名会与 name1 脱钩，改名应走宿主流程）
+        const descriptor = power_user.persona_descriptions[avatarId] ??=
+            { position: 0, depth: 2, role: 0, lorebook: '', title: '' };
         descriptor.description = description;
         if (user_avatar === avatarId) {
             // 改的是当前选中人设：setUserAvatar 对同人设会早退、宿主无人监听 PERSONA_UPDATED，
-            // 镜像与宿主描述框必须手动刷——DOM 是宿主权威编辑面，不刷会被其 input 回写旧值盖回
+            // 镜像与宿主描述框必须手动刷——描述框是宿主权威编辑面，旧值会被其 input 回写进 descriptor
             power_user.persona_description = description;
             $('#persona_description').val(description);
         }

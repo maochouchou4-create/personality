@@ -47,8 +47,9 @@ export default [
             "no-undef": "error",
             // ST 宿主模块（extensions.js / script.js / world-info.js / personas.js /
             // power-user.js / utils.js）只在酒馆运行时存在，对该 pattern 关闭解析检查；
-            // 仓内相对导入仍受检查。
-            "import/no-unresolved": ["error", { ignore: ["^(?:\\.\\./)+(?:scripts/)?(?:extensions|script|world-info|personas|power-user|utils)\\.js$"] }],
+            // 仓内相对导入仍受检查。不带 scripts/ 段：上溯 4/5 段已落在宿主 scripts/ 目录内，
+            // 多写一段＝scripts/scripts/ 双段解析必炸，此形态必须报错不许放行。
+            "import/no-unresolved": ["error", { ignore: ["^(?:\\.\\./)+(?:extensions|script|world-info|personas|power-user|utils)\\.js$"] }],
         },
     },
 ];
