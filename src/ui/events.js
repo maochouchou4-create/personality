@@ -117,8 +117,6 @@ const buildApiConfig = (contextData, fields) => ({
 
 // API 域：配置存为/切换/删除、请求超时与思考强度、取模型与连通测试、编辑现场热存绑定。
 function bindApiProfileEvents() {
-// --- [新增] API 预设表单管理事件 ---
-    
     // 1. 保存为配置：把当前表单（含命名框）整体收进新配置并选中，不清空表单——
     //    旧「新建空白」语义下未选中配置时填的内容没有保存路径，且清空会砸掉已填字段。
     //    已选配置的后续改动由 saveCurrentState 的自动热保存写回，此处只负责从无到有。
@@ -249,12 +247,10 @@ function bindApiProfileEvents() {
 
 // 预设与开场白域：预设下拉记忆、开场白选择与预览折叠。
 function bindPresetGreetingsEvents() {
-// [Fix 10] Preset Select Change Logic
     $(document).on('change.pw', '#pw-preset-select', function() {
         const val = $(this).val();
         store.uiStateCache.generationPreset = val;
         saveData();
-        // [Fix 14] Update Hint on Change
         $('#pw-preset-hint').text(getPresetHintText(val));
     });
 
@@ -273,7 +269,6 @@ function bindPresetGreetingsEvents() {
         }
     });
 
-    // [Fix 1] Greetings Toggle - Fixed JS for direct textarea
     $(document).on('click.pw', '#pw-greetings-toggle-bar', function() {
         const $preview = $('#pw-greetings-preview');
         if ($preview.is(':visible')) {
@@ -348,7 +343,6 @@ $(document).on('click.pw', '#pw-copy-persona', function() {
     };
     $(document).on('input.pw', '.pw-auto-height', function () { adjustHeight(this); });
 
-    
     // --- 文本框焦点切换：点击哪个展开哪个 ---
     $(document).on('focus.pw', '#pw-request', function() {
         if ($('#pw-result-area').is(':visible')) {
@@ -695,6 +689,7 @@ export function bindEvents() {
         context.eventSource.on(context.eventTypes.APP_READY, addPersonaButton);
         context.eventSource.on(context.eventTypes.MOVABLE_PANELS_RESET, addPersonaButton);
     }
+    // 对外契约：控制台/外部脚本经 window.openPersonaWeaver 直接唤起生成面板
     window.openPersonaWeaver = openCreatorPopup;
 
     bindApiProfileEvents();

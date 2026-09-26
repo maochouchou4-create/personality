@@ -1,4 +1,3 @@
-
 {
     "display_name": "Persona Weaver (User人设生成器)",
     "name": "personality",
@@ -8,6 +7,5 @@
     "js": "index.js",
     "css": "style.css",
     "type": "extension",
-    "notes": "v3.4.6 更新：\n1.独立 API 与主 API 支持流式输出\n2.修复使用剧情推断时部分条目为空的情况\n3.修复纯润色时未涉及字段被清空或被替换为占位符的问题"
+    "notes": "v3.4.6：\n1. 两段式生成链（AI 策展 schema → 按 schema 填充人设）与润色/重 Roll\n2. 独立 API 与主 API 均支持流式输出与可配置超时\n3. API 配置可保存多套并热同步\n4. 世界书全量注入生成、人设一键写回主世界书/覆盖当前人设\n5. 适配 TauriTavern 宿主（人设域走正规 personas 接口）"
 }
-

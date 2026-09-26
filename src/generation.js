@@ -133,7 +133,6 @@ Treat this as a rigid logical constraint for the simulation database.
     }
 }
 
-// [Fix 10 & Update] New Logic for System Prompt Retrieval based on Selection
 function getRealSystemPrompt(selectedPreset) {
     // 1. Pure Mode: Force return empty string (No Main, No JB)
     if (selectedPreset === 'pure') {
@@ -181,7 +180,6 @@ function getRealSystemPrompt(selectedPreset) {
     return null;
 }
 
-// [Fix 14] Dynamic Preset Hint Logic
 export function getPresetHintText(val) {
     if (val === 'pure') {
         return "纯净模式可避免受预设风格影响或剧情续写，但无破限功能。如遇拒答，请尝试切换至其他包含破限的预设。";

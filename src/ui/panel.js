@@ -113,7 +113,6 @@ export async function openCreatorPopup() {
 
     const presetOptionsHtml = buildPresetOptions();
 
-    // [Fix 14] Initial Hint Text
     const initialHint = getPresetHintText(store.uiStateCache.generationPreset);
 
     let initialProfileName = "默认配置 1";
@@ -215,7 +214,6 @@ export async function openCreatorPopup() {
     <div id="pw-view-context" class="pw-view">
         <div class="pw-scroll-area">
             
-            <!-- [Fix 13] Preset Selector Relocated to TOP & Styled simply -->
             <div class="pw-card-section">
                 <div class="pw-row">
                     <label class="pw-section-label">生成预设</label>
@@ -235,7 +233,6 @@ export async function openCreatorPopup() {
                         <option value="">(不使用开场白)</option>
                     </select>
                 </div>
-                <!-- [Fix 1] Restored original textarea with larger height -->
                 <div id="pw-greetings-toggle-bar" class="pw-preview-toggle-bar" style="display:none;">
                     <i class="fa-solid fa-angle-up"></i> 收起预览
                 </div>

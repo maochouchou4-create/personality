@@ -114,7 +114,6 @@ async function cleanGhostPersonaKeys() {
     }
 }
 
-// [Fix 15] Universal Smart Keyword Logic
 export function generateSmartKeywords(name, content, staticTags = []) {
     let rawKeys = [name, ...staticTags];
 

@@ -13,7 +13,7 @@ export function autoBindGreetings() {
             if ($(`#pw-greetings-select option[value="${swipeId}"]`).length > 0) {
                 $('#pw-greetings-select').val(swipeId);
 
-                // [Fix 8] Set value but keep collapsed by default
+                // 默认收起：打开面板不抢输入焦点；有结果时由 userContext.hasResult 在初始化时恢复
                 if (store.currentGreetingsList[swipeId]) {
                     $('#pw-greetings-preview').val(store.currentGreetingsList[swipeId].content).hide();
                     $('#pw-greetings-toggle-bar').show().html('<i class="fa-solid fa-angle-down"></i> 展开预览');
@@ -27,7 +27,6 @@ export function autoBindGreetings() {
     }
 }
 
-// ---[新增] 渲染 API 配置预设下拉框 ---
 export function renderApiProfiles() {
     const savedState = loadState();
     const lc = savedState.localConfig || {};
