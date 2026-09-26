@@ -34,6 +34,8 @@ export default [
                 AbortController: "readonly",
                 TextDecoder: "readonly",
                 Image: "readonly",
+                FormData: "readonly",
+                File: "readonly",
                 // ST 宿主 / 插件注入全局
                 SillyTavern: "readonly",
                 $: "readonly",
@@ -43,9 +45,10 @@ export default [
         },
         rules: {
             "no-undef": "error",
-            // ST 宿主模块（extensions.js / script.js）只在酒馆运行时存在，
-            // 对该 pattern 关闭解析检查；仓内相对导入仍受检查。
-            "import/no-unresolved": ["error", { ignore: ["^(?:\\.\\./)+(?:extensions|script)\\.js$"] }],
+            // ST 宿主模块（extensions.js / script.js / world-info.js / personas.js /
+            // power-user.js / utils.js）只在酒馆运行时存在，对该 pattern 关闭解析检查；
+            // 仓内相对导入仍受检查。
+            "import/no-unresolved": ["error", { ignore: ["^(?:\\.\\./)+(?:scripts/)?(?:extensions|script|world-info|personas|power-user|utils)\\.js$"] }],
         },
     },
 ];

@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 
-const EXTERNAL = /\/(\.\.\/)+(extensions|script)\.js$/;
+const EXTERNAL = /\/(\.\.\/)+(scripts\/)?(extensions|script|utils|personas|power-user|world-info)\.js$/;
 const IMPORT_RE = /import\s+(?:([^'"]*?)\s*from\s*)?['"](\.[^'"]*)['"]/g;
 const NAMED_RE = /\{([^}]*)\}/;
 

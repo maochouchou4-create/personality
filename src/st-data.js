@@ -1,10 +1,12 @@
 // ST 运行时取数适配层：角色信息 / 开场白 / 用户人格描述的唯一取数通道，供生成域与 UI 侧消费。
 // SillyTavern / window / $ 为宿主全局，不经 import；getContext 走 ST 的 extensions 模块边界。
 import { getContext } from "../../../../extensions.js";
+import { power_user } from "../../../../scripts/power-user.js";
+import { user_avatar } from "../../../../scripts/personas.js";
 
 export function getCharacterInfoText() {
     const context = getContext();
-    const charId = SillyTavern.getCurrentChatId ? SillyTavern.characterId : context.characterId;
+    const charId = context.characterId;
     if (charId === undefined || !context.characters[charId]) return "";
     const char = context.characters[charId];
     const data = char.data || char;
@@ -36,13 +38,8 @@ export function getCharacterGreetingsList() {
 export function getActivePersonaDescription() {
     const domVal = $('#persona_description').val();
     if (domVal !== undefined && domVal !== null) return domVal;
-    const context = getContext();
-    if (context && context.powerUserSettings) {
-        if (context.powerUserSettings.persona_description) return context.powerUserSettings.persona_description;
-        const selected = context.powerUserSettings.persona_selected;
-        if (selected && context.powerUserSettings.personas && context.powerUserSettings.personas[selected]) {
-            return context.powerUserSettings.personas[selected];
-        }
-    }
-    return "";
+    // 主路径＝单数镜像字段（宿主对当前选中人设持续同步，personas.js:925）；
+    // 回退＝descriptor 真源。personas 映射的值是显示名不是描述（旧回退链拿错形状）。
+    if (power_user.persona_description) return power_user.persona_description;
+    return power_user.persona_descriptions?.[user_avatar]?.description || "";
 }

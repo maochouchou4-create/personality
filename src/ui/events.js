@@ -4,7 +4,7 @@ import { getContext } from "../../../../../extensions.js";
 import { store, loadData, saveData, loadState, saveState } from "../state.js";
 import { getActivePersonaDescription } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
-import { forceSavePersona, syncPersonaToWorldInfo, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
+import { upsertPersona, syncPersonaToWorldInfo, getContextWorldBooks, getWorldBookEntries } from "../world-info.js";
 import { renderDiffComparison, assembleDiffResult } from "../diff.js";
 import { TEXT } from "../strings.js";
 import { log as logInfo, error as logError } from "../log.js";
@@ -598,7 +598,12 @@ export function bindEvents() {
         const content = $('#pw-result-text').val();
         if (!content) return toastr.warning(TEXT.TOAST_EMPTY_RESULT);
         const name = $('.persona_name').first().text().trim() || $('h5#your_name').text().trim() || "User";
-        await forceSavePersona(name, content);
+        try {
+            await upsertPersona(name, content);
+        } catch (e) {
+            logError(e);
+            return toastr.error(TEXT.TOAST_SAVE_FAIL(e.message));
+        }
         toastr.success(TEXT.TOAST_SAVE_SUCCESS(name));
         $('.popup_close').click();
     });

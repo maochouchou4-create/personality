@@ -3,7 +3,10 @@
 // 单一事实源在 state.js，经 import 消费。
 // 宿主操作全部走 getContext() 挂载方法，不新增宿主模块 import（check-imports 白名单只认 extensions/script）。
 import { getContext } from "../../../../extensions.js";
-import { saveSettingsDebounced } from "../../../../../script.js";
+import { saveSettingsDebounced, default_user_avatar, getRequestHeaders } from "../../../../../script.js";
+import { findPersona } from "../../../../scripts/utils.js";
+import { initPersona, setUserAvatar, getUserAvatars, user_avatar } from "../../../../scripts/personas.js";
+import { power_user } from "../../../../scripts/power-user.js";
 import { store, safeLocalStorageSet, STORAGE_KEY_WI_STATE, STORAGE_KEY_PINNED_BOOKS } from "./state.js";
 import { TEXT } from "./strings.js";
 import { error as logError, warn as logWarn } from "./log.js";
@@ -39,19 +42,60 @@ export function saveWiSelection(bookName, uids) {
     safeLocalStorageSet(STORAGE_KEY_WI_STATE, JSON.stringify(store.wiSelectionCache));
 }
 
-export async function forceSavePersona(name, description) {
-    const context = getContext();
-    if (!context.powerUserSettings.personas) context.powerUserSettings.personas = {};
-    context.powerUserSettings.personas[name] = description;
-    context.powerUserSettings.persona_selected = name;
-    const $nameInput = $('#your_name');
-    const $descInput = $('#persona_description');
-    if ($nameInput.length) $nameInput.val(name).trigger('input').trigger('change');
-    if ($descInput.length) $descInput.val(description).trigger('input').trigger('change');
-    const $h5Name = $('h5#your_name');
-    if ($h5Name.length) $h5Name.text(name);
-    await saveSettingsDebounced();
-    return true;
+// 人设写回（TT 正规口径）：personas 真源是 {头像文件id: 显示名}，描述在
+// persona_descriptions[头像id].description，持久化时由后端写进头像 PNG 元数据——
+// 头像文件不存在即报「no longer exists」，故新人设必须先经 /api/avatars/upload 落 PNG。
+// persona_selected 字段在 TT 不存在，选中态走 setUserAvatar（user_avatar）。
+export async function upsertPersona(displayName, description) {
+    const existing = findPersona({ name: displayName, allowAvatar: false, preferCurrentPersona: false });
+    const avatarId = existing?.avatar;
+
+    if (avatarId) {
+        power_user.personas[avatarId] = displayName;
+        const descriptor = power_user.persona_descriptions[avatarId] ??= {};
+        descriptor.description = description;
+        // 改的是当前选中人设时必须同步单数镜像，否则宿主 applyPersonaDescription 会用旧镜像盖回
+        if (user_avatar === avatarId) power_user.persona_description = description;
+        saveSettingsDebounced();
+        const context = getContext();
+        await context.eventSource.emit(context.eventTypes.PERSONA_UPDATED, avatarId);
+    } else {
+        // 新人设：avatarId 约定照抄宿主 createDummyPersona（personas.js:528）
+        const newAvatarId = `${Date.now()}-${displayName.replace(/[^a-zA-Z0-9]/g, '')}.png`;
+        const blob = await (await fetch(default_user_avatar)).blob();
+        const form = new FormData();
+        form.append('avatar', new File([blob], 'avatar.png', { type: 'image/png' }));
+        form.append('overwrite_name', newAvatarId);
+        const res = await fetch('/api/avatars/upload', {
+            method: 'POST',
+            headers: getRequestHeaders({ omitContentType: true }),
+            body: form,
+        });
+        if (!res.ok) throw new Error(`头像上传失败 (${res.status})`);
+        await getUserAvatars(false);
+        await initPersona(newAvatarId, displayName, description, '', { silent: true });
+        if (user_avatar !== newAvatarId) await setUserAvatar(newAvatarId, { toastPersonaNameChange: false });
+    }
+}
+
+// 清理 personas 里指向不存在头像文件的假键（旧版插件写入的脏数据；纯内存删除＋存盘，
+// 禁止对这些 id 调 /persona-delete——后端对不存在文件 404）。
+export async function cleanGhostPersonaKeys() {
+    try {
+        const files = new Set(await getUserAvatars(false));
+        if (files.size === 0) return; // 磁盘快照为空的异常态，宁漏勿误删
+        let removed = false;
+        for (const id of Object.keys(power_user.personas)) {
+            if (!files.has(id)) {
+                delete power_user.personas[id];
+                delete power_user.persona_descriptions[id];
+                removed = true;
+            }
+        }
+        if (removed) saveSettingsDebounced();
+    } catch (e) {
+        logWarn("清理人设假键失败:", e);
+    }
 }
 
 // [Fix 15] Universal Smart Keyword Logic

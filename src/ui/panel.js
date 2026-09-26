@@ -5,7 +5,9 @@ import { store, loadData, loadState, saveState } from "../state.js";
 import { DEFAULT_TEMPLATES } from "../prompts.js";
 import { defaultSettings } from "../api.js";
 import { getPresetHintText } from "../generation.js";
-import { loadAvailableWorldBooks } from "../world-info.js";
+import { loadAvailableWorldBooks, cleanGhostPersonaKeys } from "../world-info.js";
+import { power_user } from "../../../../../scripts/power-user.js";
+import { user_avatar } from "../../../../../scripts/personas.js";
 import { TEXT } from "../strings.js";
 import { warn as logWarn } from "../log.js";
 import { autoBindGreetings, renderApiProfiles, renderGreetingsList, renderWiBooks } from "./render.js";
@@ -67,7 +69,8 @@ export async function openCreatorPopup() {
 
     let currentName = $('.persona_name').first().text().trim();
     if (!currentName) currentName = $('h5#your_name').text().trim();
-    if (!currentName) currentName = context.powerUserSettings?.persona_selected || "User";
+    // persona_selected 字段在 TT 不存在；personas 的值才是显示名
+    if (!currentName) currentName = power_user.personas[user_avatar] || "User";
 
     const activeData = store.userContext;
     
@@ -313,6 +316,8 @@ export async function openCreatorPopup() {
     </div>
 </div>
 `;
+
+    cleanGhostPersonaKeys(); // 不 await：清理失败不阻断面板打开
 
     callPopup(html, 'text', '', { wide: true, large: true, okButton: "Close" });
 

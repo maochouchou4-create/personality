@@ -4,6 +4,7 @@ export const TEXT = {
     PANEL_TITLE: `<span class="pw-title-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span>User人设生成器`,
     BTN_TITLE: "打开设定生成器",
     TOAST_SAVE_SUCCESS: (name) => `Persona "${name}" 已保存并覆盖！`,
+    TOAST_SAVE_FAIL: (msg) => `保存人设失败: ${msg}`,
     TOAST_WI_SUCCESS: (book, name) => `已写入世界书: ${book} (条目: ${name})`,
     TOAST_WI_FAIL: "当前角色未绑定世界书，无法写入",
     TOAST_WI_WRITE_FAIL: "写入世界书失败：",

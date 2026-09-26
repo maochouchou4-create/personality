@@ -4,7 +4,7 @@
 // pattern 只拦「若干级 ../ + extensions|script.js」的宿主形态（^ $ 全锚定，
 // 防未来 npm 依赖内部的 ../script.js 形态相对导入被误重定向）；"./"、"../" 开头的
 // 仓内相对模块一律放行走默认解析（拍板：不拦仓内模块）。
-const HOST_SPECIFIER = /^(\.\.\/)+(extensions|script)\.js$/;
+const HOST_SPECIFIER = /^(\.\.\/)+(scripts\/)?(extensions|script|utils|personas|power-user|world-info)\.js$/;
 const STUB_URL = new URL("./host-stub.mjs", import.meta.url).href;
 
 export function resolve(specifier, context, nextResolve) {
