@@ -667,7 +667,7 @@ export function bindEvents() {
             const $select = $('#pw-api-model-select').empty();
             models.forEach(m => $select.append(`<option value="${m}">${m}</option>`));
             if (models.length > 0) $select.val(models[0]);
-            toastr.success(`获取到 ${models.length} 个模型`);
+            toastr.success(TEXT.TOAST_MODELS_LOADED(models.length));
         } catch (e) { toastr.error(e.message); }
         finally { $btn.removeClass('fa-spin'); }
     });
@@ -697,7 +697,7 @@ export function bindEvents() {
                     })
                 });
                 if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
-                else toastr.error(`失败: ${res.status}`);
+                else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
             } else {
                 const cleanBase = url.replace(/\/chat\/completions$/, '');
                 const ep = /\/v\d+$/.test(cleanBase) ? `${cleanBase}/chat/completions` : `${cleanBase}/v1/chat/completions`;
@@ -706,7 +706,7 @@ export function bindEvents() {
                     body: JSON.stringify({ model: model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 })
                 });
                 if (res.ok) toastr.success(TEXT.TOAST_CONN_OK);
-                else toastr.error(`失败: ${res.status}`);
+                else toastr.error(TEXT.TOAST_CONN_STATUS(res.status));
             }
         } catch (e) { toastr.error(TEXT.TOAST_CONN_FAIL); }
         finally { $btn.html('<i class="fa-solid fa-plug"></i>'); }

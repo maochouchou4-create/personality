@@ -29,5 +29,9 @@ export const TEXT = {
     TOAST_EMPTY_RESULT: "内容为空",
     TOAST_CONN_OK: "连接成功！",
     TOAST_CONN_FAIL: "请求发送失败",
+    TOAST_CONN_STATUS: (status) => `失败: ${status}`,
+    TOAST_MODELS_LOADED: (n) => `获取到 ${n} 个模型`,
+    TOAST_PINNED: (book) => `已固定「${book}」，将在所有角色卡中自动加载`,
+    TOAST_UNPINNED: (book) => `已取消固定「${book}」`,
     TOAST_RESET_TO_WI: "已重置为世界书原始状态"
 };

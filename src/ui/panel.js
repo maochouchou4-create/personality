@@ -81,12 +81,12 @@ export async function openCreatorPopup() {
         <option value="pure" ${store.uiStateCache.generationPreset === 'pure' ? 'selected' : ''}>✨ 纯净模式 (Pure Mode)</option>
     `;
     try {
-        const presets = (getContext().getPresetManager('openai').getPresetList().preset_names || []).slice().sort();
+        const rawNames = getContext().getPresetManager('openai').getPresetList().preset_names || {};
+        // 本 fork 的 preset_names 被 loadOpenAISettings 重建为 {名字: 索引} 对象
+        const presets = (Array.isArray(rawNames) ? rawNames : Object.keys(rawNames)).slice().sort();
         presets.forEach(p => {
-            if (p !== 'in_use') {
-                const sel = store.uiStateCache.generationPreset === p ? 'selected' : '';
-                presetOptionsHtml += `<option value="${p}" ${sel}>[预设] ${p}</option>`;
-            }
+            const sel = store.uiStateCache.generationPreset === p ? 'selected' : '';
+            presetOptionsHtml += `<option value="${p}" ${sel}>[预设] ${p}</option>`;
         });
     } catch (e) {
         // 宿主预设管理器未就绪时下拉框只显示默认两项，不阻断面板打开

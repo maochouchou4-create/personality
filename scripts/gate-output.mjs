@@ -15,7 +15,7 @@ for (const f of files) {
     const src = readFileSync(f, "utf8");
     if (/(^|[^.\w$])console\s*\./.test(src)) problems.push(f + ": 裸 console（走 src/log.js）");
     if (/\bcatch\s*(\([^)]*\))?\s*\{\s*\}/.test(src)) problems.push(f + ": 空 catch（记日志或写 why 注释）");
-    if (/\btoastr\s*\.\s*\w+\s*\(\s*["']/.test(src)) problems.push(f + ": toast 字面量文案（收编 strings.js）");
+    if (/\btoastr\s*\.\s*\w+\s*\(\s*["'`]/.test(src)) problems.push(f + ": toast 字面量文案（收编 strings.js）");
 }
 if (problems.length) { console.error("gate-output 失败:\n" + problems.join("\n")); process.exit(1); }
 console.log("gate-output 通过");

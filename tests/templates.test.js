@@ -27,10 +27,13 @@ test("顶层块恰为既定清单且顺序一致", () => {
 test("每块叶子恰为既定清单", () => {
     const blocks = parseYamlToBlocks(DEFAULT_TEMPLATES.user);
     for (const name of EXPECTED_BLOCKS) {
-        const leaves = blocks.get(name).split("\n")
+        const lines = blocks.get(name).split("\n").filter((line) => line.trim().length > 0);
+        const leaves = lines
             .map((line) => { const m = line.match(/^\s*([^:：]+)[:：]/); return m ? m[1].trim() : null; })
             .filter(Boolean);
         assert.deepEqual(leaves, EXPECTED_LEAVES[name], `${name} 的叶子清单不符`);
+        // 防畸形叶漏检：叶子靠冒号切名，无冒号的非空行会被静默丢弃——直接判红
+        assert.equal(leaves.length, lines.length, `${name} 存在无冒号的行`);
     }
 });
 

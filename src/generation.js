@@ -142,12 +142,17 @@ export function getRealSystemPrompt(selectedPreset) {
         return "";
     }
 
+    // 宿主把启用态存 prompt_order（character_id=100001 的段，元素 {identifier,enabled}），
+    // prompt 对象本身无 enabled 字段、标识字段是 identifier 非 id——字段口径错任何一条都恒空。
     const extractSystemParts = (preset) => {
         if (!preset || !preset.prompts) return "";
+        const orderList = (Array.isArray(preset.prompt_order) ? preset.prompt_order : [])
+            .find(po => po.character_id === 100001)?.order ?? [];
+        const enabledById = new Map(orderList.map(o => [o.identifier, !!o.enabled]));
         return preset.prompts
-            .filter(p => p.enabled && (
+            .filter(p => (enabledById.get(p.identifier) ?? p.enabled ?? true) && (
                 p.role === 'system' ||
-                ['main', 'jailbreak', 'nsfw', 'jailbreak_prompt', 'main_prompt'].includes(p.id)
+                ['main', 'jailbreak', 'nsfw', 'jailbreak_prompt', 'main_prompt'].includes(p.identifier)
             ))
             .map(p => p.content)
             .join('\n\n');
@@ -164,26 +169,17 @@ export function getRealSystemPrompt(selectedPreset) {
         }
     }
 
-    // 3. Fallback / Current Mode（酒馆当前激活的 openai 预设）
+    // 3. Fallback / Current Mode（酒馆当前激活的 openai 预设；preset_settings_openai 存的是预设名）
     try {
         const ctx = getContext();
-        const pm = ctx.getPresetManager('openai');
-        const list = pm.getPresetList();
-        // preset_settings_openai 存的是 preset_names 的索引而非名字（openai.js 下拉框按它取名字）
-        const currentName = list.preset_names[ctx.chatCompletionSettings.preset_settings_openai];
-        const systemParts = extractSystemParts(pm.getCompletionPresetByName(currentName));
+        const preset = ctx.getPresetManager('openai')
+            .getCompletionPresetByName(ctx.chatCompletionSettings.preset_settings_openai);
+        const systemParts = extractSystemParts(preset);
         if (systemParts && systemParts.trim().length > 0) {
             return systemParts;
         }
     } catch (e) { logWarn("从预设获取 System Prompt 失败:", e); }
-    
-    // Last resort fallback
-    if (SillyTavern.chatCompletionSettings) {
-        const settings = SillyTavern.chatCompletionSettings;
-        const main = settings.main_prompt || "";
-        const jb = (settings.jailbreak_toggle && settings.jailbreak_prompt) ? settings.jailbreak_prompt : "";
-        if (main || jb) return `${main}\n\n${jb}`;
-    }
+
     return null;
 }
 

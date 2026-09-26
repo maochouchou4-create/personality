@@ -121,10 +121,10 @@ export const renderWiBooks = async () => {
             e.stopPropagation();
             if (window.pwPinnedBooks.includes(book)) {
                 window.pwPinnedBooks = window.pwPinnedBooks.filter(b => b !== book);
-                toastr.info(`已取消固定「${book}」`);
+                toastr.info(TEXT.TOAST_UNPINNED(book));
             } else {
                 window.pwPinnedBooks.push(book);
-                toastr.success(`已固定「${book}」，将在所有角色卡中自动加载`);
+                toastr.success(TEXT.TOAST_PINNED(book));
             }
             savePinnedBooks();
             renderWiBooks();
