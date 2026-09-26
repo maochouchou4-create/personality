@@ -2,11 +2,38 @@
 import { getContext } from "../../../../../extensions.js";
 import { callPopup } from "../../../../../../script.js";
 import { store, loadData, loadState, saveState } from "../state.js";
+import { DEFAULT_TEMPLATES } from "../prompts.js";
 import { defaultSettings } from "../api.js";
 import { getPresetHintText } from "../generation.js";
 import { loadAvailableWorldBooks } from "../world-info.js";
 import { TEXT } from "../strings.js";
 import { autoBindGreetings, renderApiProfiles, renderGreetingsList, renderWiBooks } from "./render.js";
+
+// 提示词只读视图用：正文含 <source_materials> 等类 XML 标签，不转义会被浏览器当 HTML 吞掉
+const escapeHtml = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const PROMPT_VIEW_SECTIONS = [
+    {
+        title: "策展提示词（curator）",
+        note: "点击「生成」后的第一段调用：AI 按世界书与角色卡决定本次人设的 YAML 结构（只出键不出值）。世界书不走占位符，作为独立 system 消息随请求注入。占位符：{{charInfo}}＝角色卡信息、{{userRequirements}}＝你的额外需求（空则省略）、{{user}}/{{char}}＝用户/角色名。",
+        body: () => store.promptsCache.curator
+    },
+    {
+        title: "生成提示词（personaGen）",
+        note: "两段链第二段：按策展出的 schema 填充人设；refine（润色）复用同一段但不注入 schema。占位符：{{template}}＝策展 schema（refine 时整块移除）、{{input}}＝需求或润色意见、{{charInfo}}＝角色卡、{{greetings}}＝开场白、{{user}}/{{char}}＝名字。",
+        body: () => store.promptsCache.personaGen
+    },
+    {
+        title: "兜底 system 提示词（initial）",
+        note: "跟随酒馆预设取不到时的 system 消息兜底。占位符：{{user}}＝用户名。",
+        body: () => store.promptsCache.initial
+    },
+    {
+        title: "默认模板（user）",
+        note: "策展失败或零素材时的回退 schema（七块结构）。占位符：{{user}}＝用户名。",
+        body: () => DEFAULT_TEMPLATES.user
+    }
+];
 
 export async function openCreatorPopup() {
     const context = getContext();
@@ -81,6 +108,7 @@ export async function openCreatorPopup() {
             <div class="pw-tab active" data-tab="editor">人设</div>
             <div class="pw-tab" data-tab="context">参考</div> 
             <div class="pw-tab" data-tab="api">API</div>
+            <div class="pw-tab" data-tab="prompts">提示词</div>
         </div>
     </div>
 
@@ -260,6 +288,23 @@ export async function openCreatorPopup() {
                     </select>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Prompts View（只读调优对照：显示当前生效内容，真源在 src/prompts.js，改动找 Agent） -->
+    <div id="pw-view-prompts" class="pw-view">
+        <div class="pw-scroll-area">
+            <div class="pw-card-section">
+                <div class="pw-prompt-note">只读显示当前生效的提示词与模板（含旧版本遗留的自定义值）。真源在 src/prompts.js，调优找 Agent 改代码。</div>
+            </div>
+            ${PROMPT_VIEW_SECTIONS.map((s) => `
+            <div class="pw-card-section">
+                <div class="pw-row" style="flex-direction:column; align-items:flex-start; gap:4px;">
+                    <label class="pw-section-label">${s.title}</label>
+                    <div class="pw-prompt-note">${s.note}</div>
+                </div>
+                <pre class="pw-prompt-view">${escapeHtml(s.body())}</pre>
+            </div>`).join("")}
         </div>
     </div>
 </div>

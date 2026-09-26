@@ -83,6 +83,17 @@
 .pw-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; flex-wrap: wrap; }
 .pw-section-label { font-weight: bold; font-size: 1em; padding: 2px 4px; color: var(--pw-text-main); opacity: 0.9; }
 
+/* 提示词只读视图：调优对照用，真源在 src/prompts.js */
+.pw-prompt-note { font-size: 0.8em; opacity: 0.7; line-height: 1.5; }
+.pw-prompt-view {
+    white-space: pre-wrap; word-break: break-word;
+    font-family: Consolas, "Courier New", monospace; font-size: 0.82em; line-height: 1.5;
+    background: rgba(128, 128, 128, 0.08);
+    border: 1px solid var(--pw-border);
+    border-radius: 6px; padding: 10px 12px; margin: 4px 0 0 0;
+    max-height: 420px; overflow-y: auto; user-select: text;
+}
+
 /* Info Display & Mode Switcher */
 .pw-info-display {
     display: flex; 
