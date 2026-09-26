@@ -7,6 +7,7 @@ import { getContextWorldBooks, loadWiSelection, getWorldBookEntries } from "./wo
 import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse } from "./api.js";
 import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES, FALLBACK_SYSTEM_PROMPT } from "./prompts.js";
 import { parseYamlToBlocks } from "./yaml.js";
+import { getContext } from "../../../../extensions.js";
 
 export const yieldToBrowser = () => new Promise(resolve => requestAnimationFrame(resolve));
 
@@ -136,49 +137,43 @@ Treat this as a rigid logical constraint for the simulation database.
 export function getRealSystemPrompt(selectedPreset) {
     // 1. Pure Mode: Force return empty string (No Main, No JB)
     if (selectedPreset === 'pure') {
-        return ""; 
+        return "";
     }
 
-    // 2. Specific Preset Mode
+    const extractSystemParts = (preset) => {
+        if (!preset || !preset.prompts) return "";
+        return preset.prompts
+            .filter(p => p.enabled && (
+                p.role === 'system' ||
+                ['main', 'jailbreak', 'nsfw', 'jailbreak_prompt', 'main_prompt'].includes(p.id)
+            ))
+            .map(p => p.content)
+            .join('\n\n');
+    };
+
+    // 2. Specific Preset Mode（预设存在即以其为准，无 system 部件也返回空串，不落到当前模式）
     if (selectedPreset && selectedPreset !== 'current') {
-        if (window.TavernHelper && typeof window.TavernHelper.getPreset === 'function') {
-            try {
-                const preset = window.TavernHelper.getPreset(selectedPreset);
-                if (preset && preset.prompts) {
-                    const systemParts = preset.prompts
-                        .filter(p => p.enabled && (
-                            p.role === 'system' || 
-                            ['main', 'jailbreak', 'nsfw', 'jailbreak_prompt', 'main_prompt'].includes(p.id)
-                        ))
-                        .map(p => p.content)
-                        .join('\n\n');
-                    return systemParts || "";
-                }
-            } catch (e) { 
-                console.warn(`[PW] Failed to load specific preset '${selectedPreset}':`, e);
-            }
+        try {
+            const pm = getContext().getPresetManager('openai');
+            const preset = pm.getCompletionPresetByName(selectedPreset);
+            if (preset) return extractSystemParts(preset);
+        } catch (e) {
+            console.warn(`[PW] Failed to load specific preset '${selectedPreset}':`, e);
         }
     }
 
-    // 3. Fallback / Current Mode (Original Logic)
-    if (window.TavernHelper && typeof window.TavernHelper.getPreset === 'function') {
-        try {
-            const preset = window.TavernHelper.getPreset('in_use');
-            if (preset && preset.prompts) {
-                const systemParts = preset.prompts
-                    .filter(p => p.enabled && (
-                        p.role === 'system' || 
-                        ['main', 'jailbreak', 'nsfw', 'jailbreak_prompt', 'main_prompt'].includes(p.id)
-                    ))
-                    .map(p => p.content)
-                    .join('\n\n');
-
-                if (systemParts && systemParts.trim().length > 0) {
-                    return systemParts;
-                }
-            }
-        } catch (e) { console.warn("[PW] 从预设获取 System Prompt 失败:", e); }
-    }
+    // 3. Fallback / Current Mode（酒馆当前激活的 openai 预设）
+    try {
+        const ctx = getContext();
+        const pm = ctx.getPresetManager('openai');
+        const list = pm.getPresetList();
+        // preset_settings_openai 存的是 preset_names 的索引而非名字（openai.js 下拉框按它取名字）
+        const currentName = list.preset_names[ctx.chatCompletionSettings.preset_settings_openai];
+        const systemParts = extractSystemParts(pm.getCompletionPresetByName(currentName));
+        if (systemParts && systemParts.trim().length > 0) {
+            return systemParts;
+        }
+    } catch (e) { console.warn("[PW] 从预设获取 System Prompt 失败:", e); }
     
     // Last resort fallback
     if (SillyTavern.chatCompletionSettings) {
@@ -222,7 +217,7 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
     const useStream = (apiConfig && typeof apiConfig.indepStream === 'boolean')
         ? apiConfig.indepStream
         : getIndepStreamEnabled();
-    // 思考强度：off 表示不注入；仅 OpenAI 兼容分支真生效，主 API 为 best-effort，
+    // 思考强度：off 表示不注入；仅 OpenAI 兼容分支真生效（reasoning_effort 进 HTTP payload），
     // Anthropic 原生端点严格 schema 对未知字段直接 400，故该分支不发（其正确映射是 thinking.budget_tokens，语义不同，不做）。
     const effort = (apiConfig && apiConfig.thinkingEffort) || 'off';
     // max_tokens 由 resolveMaxTokens() 按模型名自动推断，不再由用户配置
@@ -331,25 +326,14 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
                 }
                 throw new Error("无法解析 API 返回格式");
             } else {
-                if (window.TavernHelper && typeof window.TavernHelper.generateRaw === 'function') {
-                    // should_stream 让 TavernHelper 走流式管道，避免 Cloudflare / 酒馆 Node 后端
-                    // 在等完整响应时 504。generateRaw 内部会累积 token 后一次性返回完整字符串。
-                    return await window.TavernHelper.generateRaw({
-                        user_input: '', 
-                        ordered_prompts: messages,
-                        overrides: { 
-                            world_info_before: '', world_info_after: '', persona_description: '', 
-                            char_description: '', char_personality: '', scenario: '', dialogue_examples: '',
-                            chat_history: { prompts: [], with_depth_entries: false, author_note: '' }
-                        },
-                        injects: [], max_chat_history: 0,
-                        should_stream: useStream,
-                        // best-effort：宿主对未知键宽容则生效，被忽略无害（非 HTTP schema 校验）
-                        ...(effort !== 'off' ? { reasoning_effort: effort } : {})
-                    });
-                } else {
-                    throw new Error("ST版本过旧或未安装 TavernHelper");
+                // 主 API＝酒馆当前连接。prompt 传消息数组原样透传（system/WI/user/assistant-prefill 角色全保留）；
+                // 原生 generateRaw 无 reasoning_effort 传递面（思考强度真生效面在独立配置分支）、
+                // 流式跟随酒馆当前设置，与旧依赖链的参数面差异已拍板接受。
+                const ctx = getContext();
+                if (typeof ctx.generateRaw !== 'function') {
+                    throw new Error("酒馆版本过旧，无 generateRaw 接口");
                 }
+                return await ctx.generateRaw({ prompt: messages });
             }
         };
 
@@ -394,10 +378,9 @@ async function requestOnce({ apiConfig, activeSystemPrompt, wrappedWi, userMessa
 
 export async function runGeneration(data, apiConfig) {
     let charName = "Char";
-    if (window.TavernHelper && window.TavernHelper.getCharData) {
-        const cData = window.TavernHelper.getCharData('current');
-        if (cData) charName = cData.name;
-    }
+    const ctx = getContext();
+    const currentChar = ctx.characterId !== undefined ? ctx.characters[ctx.characterId] : null;
+    if (currentChar) charName = currentChar.name || charName;
     const currentName = $('.persona_name').first().text().trim() || 
                         $('h5#your_name').text().trim() || "User";
 

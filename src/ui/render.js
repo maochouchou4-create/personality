@@ -1,32 +1,29 @@
 // UI 渲染函数簇：各视图的 DOM 输出，与 events.js（输入接线）分离。
 // window.pwExtraBooks/pwPinnedBooks 由 world-info.js 模块顶层初始化，这里只消费不初始化。
+import { getContext } from "../../../../../extensions.js";
 import { store, loadState } from "../state.js";
 import { getCharacterGreetingsList } from "../st-data.js";
 import { getContextWorldBooks, getWorldBookEntries, loadWiSelection, saveWiSelection, savePinnedBooks, getPosFilterCode, getPosAbbr } from "../world-info.js";
 
 export function autoBindGreetings() {
-    if (window.TavernHelper && window.TavernHelper.getChatMessages) {
-        try {
-            const msgs = window.TavernHelper.getChatMessages(0, { include_swipes: true });
-            if (msgs && msgs.length > 0) {
-                const swipeId = msgs[0].swipe_id; 
-                if (swipeId !== undefined && swipeId !== null) {
-                    if ($(`#pw-greetings-select option[value="${swipeId}"]`).length > 0) {
-                        $('#pw-greetings-select').val(swipeId);
-                        
-                        // [Fix 8] Set value but keep collapsed by default
-                        if (store.currentGreetingsList[swipeId]) {
-                            $('#pw-greetings-preview').val(store.currentGreetingsList[swipeId].content).hide();
-                            $('#pw-greetings-toggle-bar').show().html('<i class="fa-solid fa-angle-down"></i> 展开预览');
-                        }
-                        
-                        console.log(`[PW] Auto-bound greetings to Swipe #${swipeId}`);
-                    }
+    try {
+        const msg = getContext().chat?.[0];
+        const swipeId = msg?.swipe_id;
+        if (swipeId !== undefined && swipeId !== null) {
+            if ($(`#pw-greetings-select option[value="${swipeId}"]`).length > 0) {
+                $('#pw-greetings-select').val(swipeId);
+
+                // [Fix 8] Set value but keep collapsed by default
+                if (store.currentGreetingsList[swipeId]) {
+                    $('#pw-greetings-preview').val(store.currentGreetingsList[swipeId].content).hide();
+                    $('#pw-greetings-toggle-bar').show().html('<i class="fa-solid fa-angle-down"></i> 展开预览');
                 }
+
+                console.log(`[PW] Auto-bound greetings to Swipe #${swipeId}`);
             }
-        } catch (e) {
-            console.warn("[PW] Auto-bind greetings failed:", e);
         }
+    } catch (e) {
+        console.warn("[PW] Auto-bind greetings failed:", e);
     }
 }
 

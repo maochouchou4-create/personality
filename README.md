@@ -16,7 +16,7 @@ SillyTavern 原生扩展插件。旨在利用 AI 智能生成、深度润色和�
 
 ## 📦 安装方法
 
-1.  **前置需求**：建议安装并启用 [TavernHelper (JS-Slash-Runner)](https://github.com/n0vi028/JS-Slash-Runner) 插件以获得最佳的世界书操作体验（非强制，但推荐）。
+1.  **前置需求**：无需额外扩展，全部走酒馆原生接口（世界书读写、预设、原始生成）。
 2.  打开 SillyTavern 的 **Extensions (扩展)** 页面。
 3.  点击 **Install Extension**。
 4.  在 URL 栏输入本仓库地址：`[https://github.com/sisisisilviaxie-star/st-persona-weaver]`
@@ -48,7 +48,7 @@ SillyTavern 原生扩展插件。旨在利用 AI 智能生成、深度润色和�
 
 ### 📦 Installation
 
-1.  **Prerequisite**: [TavernHelper (JS-Slash-Runner)](https://github.com/n0vi028/JS-Slash-Runner) is recommended for full World Info features.
+1.  **Prerequisite**: None. All host operations use native SillyTavern APIs (world info, presets, raw generation).
 2.  Open **Extensions** in SillyTavern.
 3.  Click **Install Extension**.
 4.  Paste the repo URL: `https://github.com/sisisisilviaxie-star/st-persona-weaver`

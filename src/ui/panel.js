@@ -79,14 +79,17 @@ export async function openCreatorPopup() {
         <option value="current" ${store.uiStateCache.generationPreset === 'current' ? 'selected' : ''}>跟随酒馆预设 (Default)</option>
         <option value="pure" ${store.uiStateCache.generationPreset === 'pure' ? 'selected' : ''}>✨ 纯净模式 (Pure Mode)</option>
     `;
-    if (window.TavernHelper && typeof window.TavernHelper.getPresetNames === 'function') {
-        const presets = window.TavernHelper.getPresetNames().sort();
+    try {
+        const presets = (getContext().getPresetManager('openai').getPresetList().preset_names || []).slice().sort();
         presets.forEach(p => {
             if (p !== 'in_use') {
                 const sel = store.uiStateCache.generationPreset === p ? 'selected' : '';
                 presetOptionsHtml += `<option value="${p}" ${sel}>[预设] ${p}</option>`;
             }
         });
+    } catch (e) {
+        // 宿主预设管理器未就绪时下拉框只显示默认两项，不阻断面板打开
+        console.warn("[PW] 预设列表加载失败:", e);
     }
 
     // [Fix 14] Initial Hint Text
