@@ -5,16 +5,15 @@ import { test } from "node:test";
 import { DEFAULT_TEMPLATES } from "../src/prompts.js";
 import { parseYamlToBlocks } from "../src/yaml.js";
 
-// 顶层块顺序即展示顺序，七块与 curator 的 base_blocks 对齐。
+// 顶层块顺序即展示顺序，六块与 curator 的 base_blocks 对齐。
 // 增删块须同批改此处与 src/prompts.js 两处。
-const EXPECTED_BLOCKS = ["基本信息", "外貌", "性格", "背景", "连接", "喜恶", "NSFW"];
+const EXPECTED_BLOCKS = ["基本信息", "外貌", "性格", "背景", "喜恶", "NSFW"];
 // 每块叶子字面清单（结构钉死，不测值）。增删叶须同批改 src/prompts.js 的模板正文。
 const EXPECTED_LEAVES = {
     基本信息: ["姓名", "年龄", "性别", "身份", "自称", "对他人的称呼"],
     外貌: ["概貌", "标志性特征", "穿着习惯"],
     性格: ["核心特质", "表里反差", "情绪反应", "小动作习惯", "说话风格", "口头禅", "底线与禁忌"],
-    背景: ["来历一句话", "现状"],
-    连接: ["与当前世界的关联"],
+    背景: ["来历一句话"],
     喜恶: ["喜欢", "讨厌"],
     NSFW: ["基本倾向", "禁忌底线"]
 };

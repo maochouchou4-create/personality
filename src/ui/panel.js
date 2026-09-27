@@ -26,7 +26,7 @@ const PROMPT_VIEW_SECTIONS = [
     },
     {
         title: "默认模板（user）",
-        note: "策展失败或零素材时的回退 schema（七块结构）。占位符：{{user}}＝用户名。",
+        note: "策展失败或零素材时的回退 schema（六块结构）。占位符：{{user}}＝用户名。",
         body: () => DEFAULT_TEMPLATES.user
     }
 ];
