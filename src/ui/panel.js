@@ -2,7 +2,7 @@
 import { getContext } from "../../../../../extensions.js";
 import { callPopup } from "../../../../../../script.js";
 import { store, loadData, loadState, saveState } from "../state.js";
-import { DEFAULT_TEMPLATES } from "../prompts.js";
+import { DEFAULT_PROMPTS, DEFAULT_TEMPLATES } from "../prompts.js";
 import { defaultSettings } from "../api.js";
 import { getPresetHintText } from "../generation.js";
 import { loadAvailableWorldBooks } from "../world-info.js";
@@ -17,12 +17,12 @@ const PROMPT_VIEW_SECTIONS = [
     {
         title: "策展提示词（curator）",
         note: "点击「生成」后的第一段调用：AI 按世界书与角色卡决定本次人设的 YAML 结构（只出键不出值）。世界书不走占位符，作为独立 system 消息随请求注入。占位符：{{charInfo}}＝角色卡信息、{{userRequirements}}＝你的额外需求（空则省略）、{{user}}/{{char}}＝用户/角色名。",
-        body: () => store.promptsCache.curator
+        body: () => DEFAULT_PROMPTS.curator
     },
     {
         title: "生成提示词（personaGen）",
         note: "两段链第二段：按策展出的 schema 填充人设；refine（润色）复用同一段但不注入 schema。占位符：{{template}}＝策展 schema（refine 时整块移除）、{{input}}＝需求或润色意见、{{charInfo}}＝角色卡、{{greetings}}＝开场白、{{user}}/{{char}}＝名字。",
-        body: () => store.promptsCache.personaGen
+        body: () => DEFAULT_PROMPTS.personaGen
     },
     {
         title: "默认模板（user）",
@@ -316,7 +316,7 @@ export async function openCreatorPopup() {
     <div id="pw-view-prompts" class="pw-view">
         <div class="pw-scroll-area">
             <div class="pw-card-section">
-                <div class="pw-prompt-note">只读显示当前生效的提示词与模板（含旧版本遗留的自定义值）。真源在 src/prompts.js，调优找 Agent 改代码。</div>
+                <div class="pw-prompt-note">只读显示当前生效的提示词与模板。真源在 src/prompts.js，调优找 Agent 改代码。</div>
             </div>
             ${PROMPT_VIEW_SECTIONS.map((s) => `
             <div class="pw-card-section">

@@ -1,8 +1,7 @@
-// 默认提示词与模版的单一事实源（纯数据模块，无依赖）。
-// 注册表键与 store.promptsCache 的任务键对应；正文里的占位符由 generation.js 组装替换，
-// 占位符键名（{{charInfo}}/{{userRequirements}}/{{user}}/{{greetings}}/{{template}}/{{input}}）
-// 是组装契约，禁止改名。默认正文可以改写，但每次改写必须同步更新 loadData 里的旧默认
-// 迁移签名——存量缓存里存着旧默认全文，不迁移的话用户端永远读到旧版。
+// 默认提示词与模版的单一事实源（纯数据模块，无依赖，真源即本文件）。
+// 正文里的占位符由 generation.js 组装替换，占位符键名
+// （{{charInfo}}/{{userRequirements}}/{{user}}/{{greetings}}/{{template}}/{{input}}）
+// 是组装契约，禁止改名。
 
 export const DEFAULT_TEMPLATES = {
     // 默认 User 模版 (主模版)。加厚取向＝可扮演字段：性格 7 叶与「自称/对他人的称呼」

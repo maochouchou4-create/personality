@@ -1,7 +1,7 @@
 // 全部事件绑定的注册（接线层）。按视图内拆是后置清单——闭包共享状态需先重构，本批只整体搬移。
 // addPersonaButton 与 bindEvents 同文件：bindEvents 将其注册为 APP_READY/MOVABLE_PANELS_RESET 处理器，须同模块作用域。
 import { getContext } from "../../../../../extensions.js";
-import { store, loadData, saveData, loadState, saveState } from "../state.js";
+import { store, saveData, loadState, saveState } from "../state.js";
 import { getActivePersonaDescription, getUserDisplayName } from "../st-data.js";
 import { runGeneration, collectContextData, getPresetHintText } from "../generation.js";
 import { upsertPersona, syncPersonaToWorldInfo, getAllWorldBooks, getWorldBookEntries } from "../world-info.js";
@@ -424,8 +424,6 @@ function bindDiffEvents() {
         }
         
         lastRefineRequest = refineReq;
-
-        if(!store.promptsCache.personaGen) loadData();
 
         const oldText = $('#pw-result-text').val();
         const $btn = $(this).find('i').removeClass('fa-magic').addClass('fa-spinner fa-spin');

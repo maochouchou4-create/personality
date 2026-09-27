@@ -1,7 +1,7 @@
 // 一次人设生成的完整域：上下文收集 → 提示词组装 → 调传输层 → 结果后处理。
 // 生成链：首次生成固定两段（curator 策展 schema → personaGen 按 schema 填充）；refine 单段。
 // 提示词正文在 prompts.js，本文件只承载组装与调用链。
-import { store, loadData } from "./state.js";
+import { store } from "./state.js";
 import { getCharacterInfoText, getCurrentCharacter, getUserDisplayName } from "./st-data.js";
 import { getAllWorldBooks, loadWiSelection, getWorldBookEntries } from "./world-info.js";
 import { getIndepTimeoutSec, getIndepStreamEnabled, resolveMaxTokens, readSSEResponse, detectEndpointStyle, normalizeApiBase } from "./api.js";
@@ -363,8 +363,6 @@ export async function runGeneration(config) {
     if (currentChar) charName = currentChar.name || charName;
     const currentName = getUserDisplayName();
 
-    if (!store.promptsCache || !store.promptsCache.personaGen) loadData(); 
-
     const rawCharInfo = getCharacterInfoText(); 
     const rawWi = config.wiText || ""; 
     const rawGreetings = config.greetingsText || "";
@@ -407,7 +405,7 @@ export async function runGeneration(config) {
 
     // AI 调用 1：策展Schema。空输出或剥围栏后不可解析 → 回退默认模板，链路不中断。
     const curateSchema = async () => {
-        const basePrompt = store.promptsCache.curator || DEFAULT_PROMPTS.curator;
+        const basePrompt = DEFAULT_PROMPTS.curator;
         const userMessageContent = basePrompt
             .replace(/{{user}}/g, currentName)
             .replace(/{{char}}/g, charName)
@@ -431,7 +429,7 @@ export async function runGeneration(config) {
         setGenProgress("生成中…");
     }
 
-    const basePrompt = store.promptsCache.personaGen || DEFAULT_PROMPTS.personaGen;
+    const basePrompt = DEFAULT_PROMPTS.personaGen;
     const wrappedTags = schemaForGen ? wrapAsXiTaReference(schemaForGen, "Schema Definition") : "";
 
     let userMessageContent = basePrompt
