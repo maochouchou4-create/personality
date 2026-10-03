@@ -16,12 +16,12 @@ import { renderWiBooks } from "./world-book-widget.js";
 const PROMPT_VIEW_SECTIONS = [
     {
         title: "策展提示词（curator）",
-        note: "点击「生成」后的第一段调用：AI 按世界书与角色卡决定本次人设的 YAML 结构（只出键不出值）。世界书不走占位符，作为独立 system 消息随请求注入。占位符：{{charInfo}}＝角色卡信息、{{userRequirements}}＝你的额外需求（空则省略）、{{user}}/{{char}}＝用户/角色名。",
+        note: "点击「生成」后的第一段调用：AI 按世界书与角色卡决定本次人设的 YAML 结构（只出键不出值）。世界书不走占位符，作为独立 system 消息随请求注入。占位符：{{charInfo}}＝角色卡信息、{{userRequirements}}＝你的额外需求（空则省略）。",
         body: () => DEFAULT_PROMPTS.curator
     },
     {
         title: "生成提示词（personaGen）",
-        note: "两段链第二段：按策展出的 schema 填充人设；refine（润色）复用同一段但不注入 schema。占位符：{{template}}＝策展 schema（refine 时整块移除）、{{input}}＝需求或润色意见、{{charInfo}}＝角色卡、{{greetings}}＝开场白、{{user}}/{{char}}＝名字。",
+        note: "两段链第二段：按策展出的 schema 填充人设；refine（润色）复用同一段但不注入 schema。占位符：{{template}}＝策展 schema（refine 时整块移除）、{{input}}＝需求或润色意见、{{charInfo}}＝角色卡、{{greetings}}＝开场白、{{user}}＝用户名。",
         body: () => DEFAULT_PROMPTS.personaGen
     },
     {
