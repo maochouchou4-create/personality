@@ -1,11 +1,11 @@
 {
     "display_name": "Persona Weaver (User人设生成器)",
     "name": "personality",
-    "version": "3.4.6",
+    "version": "3.5.0",
     "author": "Yellows & AI",
     "description": "AI辅助生成与润色User人设",
     "js": "index.js",
     "css": "style.css",
     "type": "extension",
-    "notes": "v3.4.6：\n1. 两段式生成链（AI 策展 schema → 按 schema 填充人设）与润色/重 Roll\n2. 独立 API 与主 API 均支持流式输出与可配置超时\n3. API 配置可保存多套并热同步\n4. 世界书全量注入生成、人设一键写回主世界书/覆盖当前人设\n5. 适配 TauriTavern 宿主（人设域走正规 personas 接口）"
+    "notes": "v3.5.0：\n1. 两段式生成链（AI 策展 schema → 按 schema 填充人设）与润色/重 Roll\n2. 独立 API 与主 API 均支持流式输出与可配置超时\n3. API 配置可保存多套并热同步\n4. 世界书全量注入生成、人设一键写回主世界书/覆盖当前人设\n5. 适配 TauriTavern 宿主（人设域走正规 personas 接口）\n6. 提示词活人感改造：活人感铁律＋文风正反例对照＋反僵硬负面清单\n7. 性格块新增「矛盾点」「在乎与害怕」，策展新增可演性优先原则"
 }
